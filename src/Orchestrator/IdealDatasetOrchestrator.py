@@ -1,23 +1,26 @@
-from src.Processors.MetadataProcessor import MetadataProcessor
-from src.Processors.TimeSeriesProcessor import LoadProcessor
-from src.Processors.TimeSeriesProcessor import WeatherProcessor
-
+from Processors.MetadataProcessor import MetadataProcessor
+from Processors.TimeSeriesProcessor import LoadProcessor
+from Processors.TimeSeriesProcessor import WeatherProcessor
 
 class IdealDatasetOrchestrator:
-    def __init__(self, data_dir: str):
-        self.meta_proc = MetadataProcessor(data_dir)
-        self.load_proc = LoadProcessor(data_dir)
-        self.wthr_proc = WeatherProcessor(data_dir)
+    """Coordinating class that prepares paired (Static, Dynamic) samples."""
+    def __init__(self, data_dir):
+        self.meta_proc = MetadataProcessor(data_dir + "/metadata_and_surveys/metadata/")
+        self.load_proc = LoadProcessor(data_dir + "/household_sensors/")
+        self.cached_meta = self.meta_proc.process()
 
-    def build_home_profile(self, home_id: str, sensor_id: str, feed_id: str):
-        # Polymorphic execution
-        static_data = self.meta_proc.process()
-        home_static = static_data[static_data["homeid"] == home_id]
+    def get_home_data(self, home_id):
+        # 1. Get Static DNA
+        if self.cached_meta is None: return None, None
+        
+        static_row = self.cached_meta[self.cached_meta['homeid'] == home_id]
+        if static_row.empty:
+            return None, None
+            
+        # 2. Get Dynamic Stream
+        dynamic_df = self.load_proc.process(home_id)
+        
+        if dynamic_df is None:
+            return None, None
 
-        load_data = self.load_proc.process(sensor_id)
-
-        weather_data = self.wthr_proc.process(feed_id)
-
-        full_dynamic = load_data.join(weather_data, how="inner")
-
-        return home_static, full_dynamic
+        return static_row.iloc[0], dynamic_df

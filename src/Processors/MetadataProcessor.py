@@ -1,30 +1,36 @@
-from src.Processors import IdealDataProcessor
+from Processors.IdealDataProcessor import IdealDataProcessor
 import pandas as pd
-
+import os
 
 class MetadataProcessor(IdealDataProcessor):
-    def process(self) -> pd.DataFrame:
+    def process(self):
         # Load tables identified in the datasheet
-        home_df = self.load_csv("home.csv")
-        person_df = self.load_csv("person.csv")
-        app_df = self.load_csv("appliance.csv")
+        home_path = os.path.join(self.data_path, "home.csv")
+        person_path = os.path.join(self.data_path, "person.csv")
+        
+        # Check if files exist
+        if not os.path.exists(home_path):
+            print(f"Error: Metadata file not found at {home_path}")
+            return None
 
-        # 1. Filter relevant home fields [cite: 38]
-        home_cols = ["homeid", "residents", "income band", "hometype", "build era"]
-        home_df = home_df[home_cols]
+        home = pd.read_csv(home_path)
+        person = pd.read_csv(person_path)
+        
+        # 1. Core Home Info
+        # Selecting specific columns relevant to the model
+        # Note: 'income band' usually has a space in the raw csv [cite: 38]
+        home_cols = ['homeid', 'residents', 'income_band', 'hometype']
+        meta = home[home_cols].copy()
+        
+        # 2. Primary Participant Info
+        # We only want the person who is the 'primaryparticipant' [cite: 78]
+        primary = person[person['primaryparticipant'] == True][['homeid', 'workingstatus']]
+        meta = meta.merge(primary, on='homeid', how='left')
 
-        # 2. Extract Primary Participant Info [cite: 78]
-        primary = person_df[person_df["primaryparticipant"] == True]
-        primary = primary[["homeid", "workingstatus", "ageband"]]
-
-        # 3. Aggregate high-power appliance counts [cite: 102]
-        key_apps = ["electricshower", "washingmachine", "dishwasher", "tumbledrier"]
-        app_counts = app_df[app_df["appliancetype"].isin(key_apps)]
-        app_summary = app_counts.pivot_table(
-            index="homeid", columns="appliancetype", aggfunc="size", fill_value=0
-        )
-
-        # Polymorphic merge
-        final_meta = home_df.merge(primary, on="homeid", how="left")
-        final_meta = final_meta.merge(app_summary, on="homeid", how="left").fillna(0)
-        return final_meta
+        # 3. Factorize Categoricals for Embedding Layers
+        # Filling N/A values before conversion
+        for col in ['income_band', 'hometype', 'workingstatus']:
+            meta[col] = meta[col].fillna("Unknown")
+            meta[col] = pd.factorize(meta[col])[0]
+            
+        return meta

@@ -1,31 +1,42 @@
-from src.Processors import IdealDataProcessor
+from Processors.IdealDataProcessor import IdealDataProcessor
 import pandas as pd
+import re
+import os
+import numpy as np
 
+class LoadProcessor(IdealDataProcessor):
+    """
+    Locates and processes the specific electric-combined file for a given home.
+    Naming Convention: home[id]_[room]_[sensor_id]_electric-mains_electric-combined.csv.gz
+    """
+    def find_file_for_home(self, home_id):
+        # We need to find the file that matches the pattern:
+        pattern = re.compile(fr"home{home_id}*")
+        
+        if not os.path.exists(self.data_path):
+            return None
 
-class TimeSeriesProcessor(IdealDataProcessor):
-    def __init__(self, data_dir: str, freq: str = "1T"):
-        super().__init__(data_dir)
-        self.freq = freq
+        for filename in os.listdir(self.data_path):
+            if pattern.match(filename):
+                return os.path.join(self.data_path, filename)
+        return None
 
-    def _resample_and_clean(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Common internal logic for time-series cleaning."""
-        df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df.set_index("timestamp", inplace=True)
-        return df.resample(self.freq).mean().interpolate(limit=5).fillna(0)
+    def process(self, home_id):
+        file_path = self.find_file_for_home(home_id)
+        
+        if file_path is None:
+            return None
 
+        df = pd.read_csv(file_path)
 
-class LoadProcessor(TimeSeriesProcessor):
-    def process(self, sensor_id: str) -> pd.DataFrame:
-        # datasheet specifies 'electric-combined' for total load [cite: 126]
-        df = self.load_csv(f"sensor_{sensor_id}.csv")
-        df = self._resample_and_clean(df)
-
-        # Apply Log-Scaling as discussed for model stability
-        df["value"] = np.log1p(df["value"])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df.set_index('timestamp', inplace=True)
+        
+        # Log-scaling for stability
+        df['value'] = np.log1p(df['value']) 
         return df
 
-
-class WeatherProcessor(TimeSeriesProcessor):
+class WeatherProcessor(IdealDataProcessor):
     def process(self, feed_id: str) -> pd.DataFrame:
         # Weather data comes in 15-minute intervals [cite: 139]
         df = self.load_csv(f"weather_{feed_id}.csv")

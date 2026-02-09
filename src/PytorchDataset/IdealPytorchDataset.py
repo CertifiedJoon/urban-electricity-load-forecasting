@@ -1,63 +1,68 @@
 import torch
 from torch.utils.data import Dataset
-
+import numpy as np
 
 class IdealPytorchDataset(Dataset):
-    def __init__(self, home_ids, orchestrator, window_size=40320, stride=1440):
-        """
-        Args:
-            home_ids: List of home IDs to include in this split (train/val/test).
-            orchestrator: The IdealDataOrchestrator instance we built.
-            window_size: Number of minutes in one sample (e.g., 40,320 for ~28 days).
-            stride: How many minutes to skip between window starts (e.g., 1440 for 1 day).
-        """
-        self.orchestrator = orchestrator
+    def __init__(self, home_ids, orchestrator, window_size=40320):
+        # We need window_size + 1 to create the shift
         self.window_size = window_size
+        self.fetch_size = window_size + 1 
         self.samples = []
-
-        # 1. Pre-fetch and Indexing
+        
+        print(f"Scanning directory for {len(home_ids)} homes...")
         for h_id in home_ids:
-            # Note: In a real setup, you'd map h_id to its specific sensor/weather IDs
-            # as per the datasheet naming conventions[cite: 122, 130].
-            s_id, w_id = self._get_mappings(h_id)
-
-            static, dynamic = self.orchestrator.get_full_sample(h_id, s_id, w_id)
-
-            # Create valid window start indices for this specific house
-            max_start = len(dynamic) - window_size
-            for start_idx in range(0, max_start, stride):
-                self.samples.append(
-                    {
-                        "static": static,
-                        "dynamic": dynamic.iloc[start_idx : start_idx + window_size],
-                        "home_id": h_id,
-                    }
-                )
-
-    def _get_mappings(self, home_id):
-        # Placeholder for sensor mapping logic derived from the metadata tables[cite: 11, 122].
-        return "sensor_id_here", "weather_id_here"
+            static, dynamic = orchestrator.get_home_data(h_id)
+            
+            # Debugging: Show why a home might be skipped
+            if dynamic is None:
+                print(f"Home {h_id}: Skipped (No Data Found)") # Uncomment if too noisy
+                continue
+            if len(dynamic) <= self.fetch_size:
+                print(f"Home {h_id}: Skipped (Data too short: {len(dynamic)} vs {self.fetch_size})")
+                continue
+            # Ensure we have enough data for Input + 1 Target
+            if dynamic is not None and len(dynamic) > self.fetch_size:
+                self.samples.append({
+                    'static': static,
+                    'dynamic': dynamic,
+                    'homeid': h_id
+                })
+        print(f"Loaded {len(self.samples)} valid homes.")
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
         sample = self.samples[idx]
-
-        # 2. Convert Dynamic Data to Tensors (Load + Weather + Time Features)
-        # We drop the timestamp index and keep the values
-        dynamic_tensor = torch.tensor(sample["dynamic"].values, dtype=torch.float32)
-
-        # 3. Convert Static Data (Socio-Economic DNA)
-        # These are usually categorical; we will use an Embedding layer later,
-        # so we pass them as LongTensors (integers).
-        static_values = sample["static"].drop(columns=["homeid"]).values.flatten()
-        static_tensor = torch.tensor(static_values.astype(np.int64), dtype=torch.long)
+        full_dyn = sample['dynamic']
+        static_data = sample['static']
+        
+        # Random slice
+        max_start = len(full_dyn) - self.fetch_size
+        if max_start <= 0: start_idx = 0
+        else: start_idx = np.random.randint(0, max_start)
+            
+        # Grab window + 1 extra step
+        window_plus_one = full_dyn.iloc[start_idx : start_idx + self.fetch_size]
+        values = window_plus_one['value'].values
+        
+        # --- THE FIX: SHIFTING ---
+        # Input:  [0, 1, 2 ... N-1]
+        # Target: [1, 2, 3 ... N]
+        input_seq = values[:-1]
+        target_seq = values[1:]
+        
+        static_tensor = torch.tensor([
+            static_data['residents'],
+            static_data['income_band'],
+            static_data['hometype'],
+            static_data['workingstatus']
+        ], dtype=torch.long)
 
         return {
-            "x_dynamic": dynamic_tensor,  # Shape: [Window_Size, Feature_Count]
-            "x_static": static_tensor,  # Shape: [Static_Feature_Count]
-            "target": dynamic_tensor[
-                :, 0
-            ],  # Example: predicting the next steps of 'value'
+            'x_dynamic': torch.tensor(input_seq, dtype=torch.float32).unsqueeze(-1),
+            'x_static': static_tensor,
+            'target': torch.tensor(target_seq, dtype=torch.float32),
+            'start_ts': window_plus_one.index[0].timestamp(),
+            'end_ts': window_plus_one.index[-2].timestamp() # End of input window
         }
