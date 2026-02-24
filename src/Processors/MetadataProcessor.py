@@ -19,18 +19,21 @@ class MetadataProcessor(IdealDataProcessor):
         # 1. Core Home Info
         # Selecting specific columns relevant to the model
         # Note: 'income band' usually has a space in the raw csv [cite: 38]
-        home_cols = ['homeid', 'residents', 'income_band', 'hometype']
+        home_cols = ['homeid', 'residents', 'income_band', 'hometype', 'urban_rural_class', 'build_era', 'occupied_days', 'occupied_nights',]
         meta = home[home_cols].copy()
         
         # 2. Primary Participant Info
         # We only want the person who is the 'primaryparticipant' [cite: 78]
-        primary = person[person['primaryparticipant'] == True][['homeid', 'workingstatus']]
+        person_cols = ['homeid', 'workingstatus', 'gender', 'ageband', "weeklyhoursofwork"]
+        primary = person[person['primaryparticipant'] == True][person_cols]
         meta = meta.merge(primary, on='homeid', how='left')
 
         # 3. Factorize Categoricals for Embedding Layers
         # Filling N/A values before conversion
-        for col in ['income_band', 'hometype', 'workingstatus']:
+        for col in ['build_era', 'gender', 'gender', 'ageband', 'urban_rural_class', 'weeklyhoursofwork', 'income_band', 'hometype', 'workingstatus']:
             meta[col] = meta[col].fillna("Unknown")
             meta[col] = pd.factorize(meta[col])[0]
             
-        return meta
+        cardinalities = [int(meta[col].max()) + 1 for col in meta.columns][1:]
+            
+        return meta, cardinalities

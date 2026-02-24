@@ -3,7 +3,6 @@ import torch.nn as nn
 import math
 
 class PatchEmbedding(nn.Module):
-    """Splits 40320 sequence into 60-min patches."""
     def __init__(self, patch_size, in_channels, embed_dim):
         super().__init__()
         self.patch_size = patch_size
@@ -34,48 +33,71 @@ class StaticContextEncoder(nn.Module):
         e4 = self.emb_wrk(x[:, 3])
         return self.fusion(torch.cat([e1, e2, e3, e4], dim=1)).unsqueeze(1)
     
-class SocioTemporalTransformer(nn.Module):
-    def __init__(self, seq_len=40320, patch_size=10, embed_dim=128):
+class InterpretableSocioTransformer(nn.Module):
+    def __init__(self, cardinalities, dynamic_features=1, patch_size=30, embed_dim=512, forecast_len=240):
         super().__init__()
         self.patch_size = patch_size
-        self.num_patches = seq_len // patch_size
+        self.patch_embed = PatchEmbedding(patch_size, dynamic_features, embed_dim)
         
-        self.patch_embed = PatchEmbedding(patch_size, 1, embed_dim)
-        self.static_embed = StaticContextEncoder(embed_dim)
+        # New: Static encoder returns individual tokens [Batch, 4, Dim]
+        # instead of a single summed vector
+        self.static_embeddings = nn.ModuleList([
+            nn.Embedding(card, embed_dim) for card in cardinalities
+        ])
         
-        self.pos_emb = nn.Parameter(torch.randn(1, self.num_patches, embed_dim))
+        self.temporal_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=8, batch_first=True),
+            num_layers=3
+        )
         
-        # Transformer Core
-        enc_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=8, batch_first=True)
-        self.transformer = nn.TransformerEncoder(enc_layer, num_layers=4)
+        # The Fusion Bridge: Multihead Attention
+        self.cross_attn = nn.MultiheadAttention(embed_dim, num_heads=4, batch_first=True)
         
-        # Probabilistic Heads
-        self.head_mu = nn.Linear(embed_dim, patch_size)
-        self.head_sigma = nn.Linear(embed_dim, patch_size)
-
-    def generate_causal_mask(self, sz):
-        # Mask is 2D: [sz, sz]. -inf means 'cannot look here'
-        mask = torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
-        return mask
-
+        # --- NEW: Forecast Decoder ---
+        # Instead of projecting back to patch_size, we project the FINAL latent state 
+        # to the entire forecast horizon (24 steps)
+        self.forecast_head_mu = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, forecast_len) # Outputs [Batch, 24]
+        )
+        
+        self.forecast_head_sigma = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, forecast_len) # Outputs [Batch, 24]
+        )
+        
     def forward(self, x_dyn, x_stat):
         B, L, C = x_dyn.shape
         
-        # 1. Temporal Encoding
-        h_time = self.patch_embed(x_dyn) + self.pos_emb
+        # 1. Process Time
+        h_time = self.patch_embed(x_dyn) 
+        h_time = self.temporal_encoder(h_time) # [B, Num_Patches, Dim]
         
-        # 2. Apply Causal Mask so it can't see the future
-        mask = self.generate_causal_mask(self.num_patches).to(x_dyn.device)
+        # 2. Process Static Features as separate tokens
+        # h_static shape: [B, 4, Dim]
+        h_static = torch.stack([
+            emb(x_stat[:, i]) for i, emb in enumerate(self.static_embeddings)
+        ], dim=1)
         
-        # 3. Transform
-        h_time = self.transformer(h_time, mask=mask)
+        # 3. Cross-Attention Fusion
+        # Query: Time | Key/Value: Static
+        # attn_weights gives us the interpretability!
+        h_fused, attn_weights = self.cross_attn(
+            query=h_time, 
+            key=h_static, 
+            value=h_static
+        )
         
-        # 4. Mix in Static context (DNA) via addition or concat
-        h_static = self.static_embed(x_stat) # [B, 1, Dim]
-        h_fused = h_time + h_static # Broadcast static DNA across all time patches
+        h_final = h_fused[:, -1, :] # [B, 128]
         
-        # 5. Output
-        mu = self.head_mu(h_fused).view(B, -1)
-        sigma = torch.exp(self.head_sigma(h_fused).view(B, -1)) + 1e-6
-        
-        return mu, sigma
+        # 4. Output
+        mu = self.forecast_head_mu(h_final)     # [B, 24]
+        sigma = torch.exp(self.forecast_head_sigma(h_final)) + 1e-6
+
+        # return weights for interpretability
+        if self.training:
+            return mu, sigma
+        else:
+            return mu, sigma, attn_weights

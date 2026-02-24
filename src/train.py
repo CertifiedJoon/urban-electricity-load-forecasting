@@ -1,21 +1,20 @@
 from Orchestrator.IdealDatasetOrchestrator import IdealDatasetOrchestrator
 from PytorchDataset.IdealPytorchDataset import IdealPytorchDataset
-from Transformer.SocioTemporalTransformer import SocioTemporalTransformer
+from Transformer.SocioTemporalTransformer import InterpretableSocioTransformer
 from Trainer.IdealTrainer import IdealTrainer
 from Trainer.EarlyStopper import EarlyStopping
 from torch.utils.data import DataLoader
+from interpret import visualize_rolling_week
 import torch
 import random
 import os
-
-
 
 if __name__ == "__main__":
     # Settings
     DATA_DIR = "../data" # Update this path
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     # DEVICE = "cpu"
-    BATCH_SIZE = 4 # Good for 16GB VRAM
+    BATCH_SIZE = 64 # Good for 16GB VRAM
     EPOCHS = 500
     
     # 1. Pipeline Setup
@@ -29,27 +28,27 @@ if __name__ == "__main__":
     random.shuffle(home_ids)
 
     # 80/20 Split
-    split_idx = int(len(home_ids) * 0.9)
+    split_idx = int(len(home_ids) * 0.8)
     train_ids = home_ids[:split_idx]
     val_ids = home_ids[split_idx:]
 
-    train_dataset = IdealPytorchDataset(train_ids, orchestrator)
-    val_dataset = IdealPytorchDataset(val_ids, orchestrator)
+    print("1. Train + Interpret\n2. Interpret \nType 1 or 2:")
+    choice = int(input())
 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    val_dataset = IdealPytorchDataset(val_ids, orchestrator)
+    val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+    # choice = 1
     
-    if len(train_dataset) > 0:
+    if choice == 1 and len(train_dataset) > 0:
+        train_dataset = IdealPytorchDataset(train_ids, orchestrator)
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         # 2. Model Setup
-        model = SocioTemporalTransformer()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
-        # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=1e-3, 
-        #                                                 steps_per_epoch=len(train_loader), 
-        #                                                 epochs=EPOCHS)
-        
+        model = InterpretableSocioTransformer(orchestrator.cardinalities)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+
         # ReduceLROnPlateau => reduce learning rate when loss plateus
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode='min', factor=0.5, patience=20
+            optimizer, mode='min', factor=0.5, patience=30
         )
         
         # 3. Training & Eval
@@ -66,6 +65,19 @@ if __name__ == "__main__":
                 print("Early stopping triggered. Training stopped.")
                 break
             
+        # Plot learning curve
         trainer.plot_learning_curves()
+        
+        # Interpret results
+        interpret_batch = next(iter(val_loader))
+        visualize_rolling_week(model, val_dataset, home_ids[split_idx])
+    elif choice == 2:
+        print("Input .pth path. current path is " + os.getcwd() + ":")
+        model_path = input()
+        model = InterpretableSocioTransformer(orchestrator.cardinalities)
+        model.load_state_dict(torch.load(model_path, map_location='cuda'))
+        model.to('cuda')
+        interpret_batch = next(iter(val_loader))
+        visualize_rolling_week(model, val_dataset, home_ids[split_idx])
     else:
         print("No data loaded. Check DATA_DIR path.")

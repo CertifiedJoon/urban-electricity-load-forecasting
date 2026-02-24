@@ -2,6 +2,7 @@ import torch
 from torch.amp import GradScaler, autocast
 import pandas as pd
 import matplotlib.pyplot as plt
+
 class IdealTrainer:
     def __init__(self, model, train_loader, val_loader, optimizer, scheduler, device="cuda"):
         self.model = model.to(device)
@@ -25,10 +26,6 @@ class IdealTrainer:
         self.model.train()
         total_loss, batches = 0, 0
         for batch in self.train_loader:
-            # Date filter
-            if not (batch['end_ts'].max().item() < self.bad_start or batch['start_ts'].min().item() > self.bad_end):
-                continue
-
             x_dyn, x_stat, target = batch['x_dynamic'].to(self.device), batch['x_static'].to(self.device), batch['target'].to(self.device)
             
             self.optimizer.zero_grad()
@@ -54,7 +51,7 @@ class IdealTrainer:
         with torch.no_grad():
             for batch in self.val_loader:
                 x_dyn, x_stat, target = batch['x_dynamic'].to(self.device), batch['x_static'].to(self.device), batch['target'].to(self.device)
-                mu, sigma = self.model(x_dyn, x_stat)
+                mu, sigma, _ = self.model(x_dyn, x_stat)
                 loss = self.nll_loss(mu, sigma, target)
                 total_loss += loss.item()
                 batches += 1
