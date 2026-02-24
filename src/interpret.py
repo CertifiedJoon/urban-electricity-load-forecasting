@@ -45,8 +45,6 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
             attention_accumulator.append(attn[0, -1, :].cpu().numpy())
 
     attn_matrix = np.array(attention_accumulator)
-    print(attn_matrix.shape)
-    print(len(predictions))
 
     # --- PLOTTING ---
     fig, (ax1, ax2) = plt.subplots(
@@ -93,4 +91,4 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
     ax1.set_xlim(time_axis[0], time_axis[-1])
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig("interpretation.png")

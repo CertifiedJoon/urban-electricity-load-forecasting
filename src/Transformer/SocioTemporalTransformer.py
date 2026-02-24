@@ -20,7 +20,7 @@ class InterpretableSocioTransformer(nn.Module):
         self,
         cardinalities,
         dynamic_features=1,
-        patch_size=10,
+        patch_size=30,
         embed_dim=512,
         num_head=8,
         num_layers=3,
