@@ -1,0 +1,18 @@
+# --- Core Deep Learning ---
+torch>=2.0.0
+torchvision
+torchaudio
+
+# --- Data Processing ---
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.2.0
+
+# --- Visualization & Interpretation ---
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# --- Utilities ---
+tqdm          # For progress bars in training loops
+pyyaml        # If you decide to move configs to .yaml files
+scipy         # For signal processing/statistics

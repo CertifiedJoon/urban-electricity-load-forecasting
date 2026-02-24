@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 
+
 class PatchEmbedding(nn.Module):
     def __init__(self, patch_size, in_channels, embed_dim):
         super().__init__()
@@ -14,8 +15,10 @@ class PatchEmbedding(nn.Module):
         x = x.view(B, num_patches, self.patch_size * C)
         return self.projection(x)
 
+
 class StaticContextEncoder(nn.Module):
     """Encodes the Household DNA."""
+
     def __init__(self, embed_dim):
         super().__init__()
         # Define embeddings for [residents, income, hometype, work]
@@ -23,7 +26,7 @@ class StaticContextEncoder(nn.Module):
         self.emb_inc = nn.Embedding(20, 16)
         self.emb_typ = nn.Embedding(10, 8)
         self.emb_wrk = nn.Embedding(10, 8)
-        self.fusion = nn.Linear(8+16+8+8, embed_dim)
+        self.fusion = nn.Linear(8 + 16 + 8 + 8, embed_dim)
 
     def forward(self, x):
         # x shape: [Batch, 4]
@@ -32,68 +35,80 @@ class StaticContextEncoder(nn.Module):
         e3 = self.emb_typ(x[:, 2])
         e4 = self.emb_wrk(x[:, 3])
         return self.fusion(torch.cat([e1, e2, e3, e4], dim=1)).unsqueeze(1)
-    
+
+
 class InterpretableSocioTransformer(nn.Module):
-    def __init__(self, cardinalities, dynamic_features=1, patch_size=30, embed_dim=512, forecast_len=240):
+    def __init__(
+        self,
+        cardinalities,
+        dynamic_features=1,
+        patch_size=30,
+        embed_dim=512,
+        num_head=8,
+        num_layers=3,
+        smoke_test=False,
+    ):
         super().__init__()
+        if smoke_test:
+            embed_dim = 64
+            num_head = 2
+            num_layers = 1
         self.patch_size = patch_size
         self.patch_embed = PatchEmbedding(patch_size, dynamic_features, embed_dim)
-        
+
         # New: Static encoder returns individual tokens [Batch, 4, Dim]
         # instead of a single summed vector
-        self.static_embeddings = nn.ModuleList([
-            nn.Embedding(card, embed_dim) for card in cardinalities
-        ])
-        
+        self.static_embeddings = nn.ModuleList(
+            [nn.Embedding(card, embed_dim) for card in cardinalities]
+        )
+
         self.temporal_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=8, batch_first=True),
-            num_layers=3
+            nn.TransformerEncoderLayer(
+                d_model=embed_dim, nhead=num_head, batch_first=True
+            ),
+            num_layers=num_layers,
         )
-        
+
         # The Fusion Bridge: Multihead Attention
-        self.cross_attn = nn.MultiheadAttention(embed_dim, num_heads=4, batch_first=True)
-        
-        # --- NEW: Forecast Decoder ---
-        # Instead of projecting back to patch_size, we project the FINAL latent state 
-        # to the entire forecast horizon (24 steps)
-        self.forecast_head_mu = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.ReLU(),
-            nn.Linear(embed_dim, forecast_len) # Outputs [Batch, 24]
+        self.cross_attn = nn.MultiheadAttention(
+            embed_dim, num_heads=num_head, batch_first=True
         )
-        
-        self.forecast_head_sigma = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
+
+        self.mu_head = nn.Sequential(
+            nn.Linear(embed_dim, 256),
             nn.ReLU(),
-            nn.Linear(embed_dim, forecast_len) # Outputs [Batch, 24]
+            nn.Linear(256, 1),  # Changed from 240 to 1
         )
-        
+
+        self.sigma_head = nn.Sequential(
+            nn.Linear(embed_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),  # Changed from 240 to 1
+        )
+
     def forward(self, x_dyn, x_stat):
         B, L, C = x_dyn.shape
-        
+
         # 1. Process Time
-        h_time = self.patch_embed(x_dyn) 
-        h_time = self.temporal_encoder(h_time) # [B, Num_Patches, Dim]
-        
+        h_time = self.patch_embed(x_dyn)
+        h_time = self.temporal_encoder(h_time)
+
         # 2. Process Static Features as separate tokens
-        # h_static shape: [B, 4, Dim]
-        h_static = torch.stack([
-            emb(x_stat[:, i]) for i, emb in enumerate(self.static_embeddings)
-        ], dim=1)
-        
+        h_static = torch.stack(
+            [emb(x_stat[:, i]) for i, emb in enumerate(self.static_embeddings)], dim=1
+        )
+
         # 3. Cross-Attention Fusion
         # Query: Time | Key/Value: Static
         # attn_weights gives us the interpretability!
         h_fused, attn_weights = self.cross_attn(
-            query=h_time, 
-            key=h_static, 
-            value=h_static
+            query=h_time, key=h_static, value=h_static
         )
-        
-        h_final = h_fused[:, -1, :] # [B, 128]
-        
+
+        h_final = h_fused[:, -1, :]
+
         # 4. Output
-        mu = self.forecast_head_mu(h_final)     # [B, 24]
+        mu = self.forecast_head_mu(h_final)
         sigma = torch.exp(self.forecast_head_sigma(h_final)) + 1e-6
 
         # return weights for interpretability
