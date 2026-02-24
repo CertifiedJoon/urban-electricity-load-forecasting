@@ -2,6 +2,7 @@ import torch
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import sys
 
 
 def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
@@ -20,6 +21,9 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
 
     with torch.no_grad():
         for t in range(history_len, history_len + plot_len, step_jump):
+            sys.stdout.write(f"\r Simulating {(t - history_len) / plot_len * 100}% ")
+            sys.stdout.flush()
+
             # 1. Slice history
             x_hist = full_data[t - history_len : t].unsqueeze(0).to(device)
             s_feat = static_feat.unsqueeze(0).to(device)
@@ -38,58 +42,55 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
             actuals_at_target.append(full_data[t + lead_time, 0].item())
 
             # 3. Attention (Last token)
-            avg_attn = attn[0, :, -1, :].mean(dim=0).cpu().numpy()
-            attention_accumulator.append(avg_attn)
+            attention_accumulator.append(attn[0, -1, :].cpu().numpy())
 
-    # --- FIXING THE RESHAPE ERROR ---
     attn_matrix = np.array(attention_accumulator)
-    num_steps, num_patches = attn_matrix.shape
-
-    # Calculate days based on actual patches returned (e.g., 8640)
-    # Total minutes (86400) / Num patches (8640) = Patch Size (10)
-    # Patches per day = 1440 / Patch Size
-    patches_per_day = 1440 // (history_len // num_patches)
-    num_days_detected = num_patches // patches_per_day
-
-    # Dynamic Reshape
-    daily_attn = (
-        attn_matrix[:, : num_days_detected * patches_per_day]
-        .reshape(num_steps, num_days_detected, patches_per_day)
-        .mean(axis=2)
-    )
+    print(attn_matrix.shape)
+    print(len(predictions))
 
     # --- PLOTTING ---
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(15, 10), sharex=True, gridspec_kw={"height_ratios": [2, 1]}
     )
+    time_axis = np.arange(len(predictions))
+    num_features = attn_matrix.shape[1]  # This is 11
 
-    time_axis = np.arange(len(predictions)) * step_jump / 60  # Convert to hours
-
-    # Top: Point Prediction vs Future Reality
-    ax1.plot(
-        time_axis, actuals_at_target, label="Actual (at t+4h)", color="black", alpha=0.3
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(15, 10), sharex=True, gridspec_kw={"height_ratios": [2, 1]}
     )
-    ax1.plot(time_axis, predictions, label="Forecast (for t+4h)", color="green")
+
+    # --- TOP PLOT: POWER ---
+    ax1.plot(
+        time_axis, actuals_at_target, color="black", alpha=0.3, label="Actual (t+4h)"
+    )
+    ax1.plot(time_axis, predictions, color="green", label="Forecast")
     ax1.fill_between(
         time_axis,
-        np.array(predictions) - np.array(uncertainties),
-        np.array(predictions) + np.array(uncertainties),
+        np.array(predictions) - 1,
+        np.array(predictions) + 1,
         color="green",
         alpha=0.1,
     )
     ax1.set_ylabel("Power (Normalized)")
-    ax1.set_title(f"4-Hour Lead-Time Rolling Forecast: Home {home_id}")
-    ax1.legend()
+    ax1.legend(loc="upper right")
 
-    # Bottom: Attention Heatmap
-    sns.heatmap(daily_attn.T, ax=ax2, cmap="YlGnBu", cbar=False)
-    ax2.set_ylabel("Days Ago")
-    ax2.set_xlabel("Hours into Testing Week")
+    # --- BOTTOM PLOT: ATTENTION ALIGNED ---
+    # We use extent=[xmin, xmax, ymin, ymax] to map indices to Hours
+    ax2.imshow(
+        attn_matrix.T,
+        aspect="auto",
+        origin="upper",
+        extent=[time_axis[0], time_axis[-1], num_features, 0],
+        cmap="Blues",
+    )
+    # Clean up labels
+    ax2.set_yticks(np.arange(num_features) + 0.5)  # Center labels in bins
+    ax2.set_yticklabels(range(num_features))
+    ax2.set_ylabel("Socio Features")
+    ax2.set_xlabel("Time (Hours into Week)")
 
-    # Correct Y-labels for 60 days
-    yticks = np.linspace(0, num_days_detected, 6)
-    ax2.set_yticks(yticks)
-    ax2.set_yticklabels([f"{int(num_days_detected - d)}d" for d in yticks])
+    # Force the x-axis to exactly the week range
+    ax1.set_xlim(time_axis[0], time_axis[-1])
 
     plt.tight_layout()
     plt.show()

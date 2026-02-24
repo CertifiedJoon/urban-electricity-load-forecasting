@@ -1,18 +1,17 @@
-from Orchestrator.IdealDatasetOrchestrator import IdealDatasetOrchestrator
-from PytorchDataset.IdealPytorchDataset import IdealPytorchDataset
-from Transformer.SocioTemporalTransformer import InterpretableSocioTransformer
-from Trainer.IdealTrainer import IdealTrainer
-from Trainer.EarlyStopper import EarlyStopping
+from src.Orchestrator.IdealDatasetOrchestrator import IdealDatasetOrchestrator
+from src.Transformer.SocioTemporalTransformer import InterpretableSocioTransformer
+from src.PytorchDataset.IdealPytorchDataset import IdealPytorchDataset
+from src.Trainer.IdealTrainer import IdealTrainer
+from src.Trainer.EarlyStopper import EarlyStopping
+from src.interpret import visualize_rolling_week_point
 from torch.utils.data import DataLoader
-from torch.utils.data import Subset
-from interpret import visualize_rolling_week_point
 import torch
 import random
 import os
 
 if __name__ == "__main__":
     # Settings
-    DATA_DIR = "../data"  # Update this path
+    DATA_DIR = "data"  # Update this path
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     # DEVICE = "cpu"
     BATCH_SIZE = 64  # Good for 16GB VRAM
@@ -26,7 +25,7 @@ if __name__ == "__main__":
     home_ids = [
         int(filename.split("_", 1)[0][4:])
         for filename in filter(
-            lambda x: x.endswith(".csv"), os.listdir("../data/household_sensors/")
+            lambda x: x.endswith(".csv"), os.listdir(DATA_DIR + "/household_sensors/")
         )
     ]
 
@@ -39,7 +38,8 @@ if __name__ == "__main__":
     val_ids = home_ids[split_idx:]
 
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
-    choice = int(input())
+    # choice = int(input())
+    choice = 1
 
     # choice = 1
 
@@ -92,7 +92,7 @@ if __name__ == "__main__":
         interpret_batch = next(iter(val_loader))
         visualize_rolling_week_point(model, val_dataset, home_ids[split_idx], DEVICE)
     elif choice == 3:
-        print("🚀 RUNNING IN SMOKE TEST MODE (CPU)")
+        print("RUNNING IN SMOKE TEST MODE (CPU)")
         # Overwrite config for speed
         BATCH_SIZE = 2
         EPOCHS = 1
@@ -101,9 +101,6 @@ if __name__ == "__main__":
         # Just take the first 4 homes
         train_dataset = IdealPytorchDataset(train_ids, orchestrator)
         val_dataset = IdealPytorchDataset(val_ids, orchestrator)
-        small_indices = range(min(4, len(train_dataset)))
-        train_dataset = Subset(train_dataset, small_indices)
-        val_dataset = Subset(val_dataset, small_indices)
 
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)

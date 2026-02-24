@@ -52,7 +52,7 @@ class IdealPytorchDataset(Dataset):
         values = window["value"].values
 
         # shift 4 hours
-        input_seq = values[:-prediction_shift]
+        input_seq = values[: self.window_size]
         target = values[-1]
 
         static_tensor = torch.tensor(
@@ -75,7 +75,7 @@ class IdealPytorchDataset(Dataset):
         return {
             "x_dynamic": torch.tensor(input_seq, dtype=torch.float32).unsqueeze(-1),
             "x_static": static_tensor,
-            "target": target,
+            "target": torch.tensor([target]).float(),
             "start_ts": window.index[0].timestamp(),
             "end_ts": window.index[
                 -prediction_shift - 1

@@ -25,7 +25,7 @@ class IdealTrainer:
         dist = torch.distributions.Normal(mu, sigma)
         return -dist.log_prob(target).mean()
 
-    def train_epoch(self):
+    def train_epoch(self, epoch_idx):
         self.model.train()
         total_loss, batches = 0, 0
         for batch in self.train_loader:

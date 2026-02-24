@@ -1,18 +1,20 @@
-from Processors.IdealDataProcessor import IdealDataProcessor
+from src.Processors.IdealDataProcessor import IdealDataProcessor
 import pandas as pd
 import re
 import os
 import numpy as np
+
 
 class LoadProcessor(IdealDataProcessor):
     """
     Locates and processes the specific electric-combined file for a given home.
     Naming Convention: home[id]_[room]_[sensor_id]_electric-mains_electric-combined.csv.gz
     """
+
     def find_file_for_home(self, home_id):
         # We need to find the file that matches the pattern:
-        pattern = re.compile(fr"home{home_id}*")
-        
+        pattern = re.compile(rf"home{home_id}*")
+
         if not os.path.exists(self.data_path):
             return None
 
@@ -23,22 +25,23 @@ class LoadProcessor(IdealDataProcessor):
 
     def process(self, home_id):
         file_path = self.find_file_for_home(home_id)
-        
+
         if file_path is None:
             return None
 
         df = pd.read_csv(file_path)
 
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df.set_index('timestamp', inplace=True)
-        
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df.set_index("timestamp", inplace=True)
+
         # print(f"{str(home_id)}: {len(df)} entries before resampling")
         # df = df.resample('10min').mean()
         # print(f"{str(home_id)}: {len(df)} entries after resampling")
-        
+
         # Log-scaling for stability
-        df['value'] = np.log1p(df['value']) 
+        df["value"] = np.log1p(df["value"])
         return df
+
 
 class WeatherProcessor(IdealDataProcessor):
     def process(self, feed_id: str) -> pd.DataFrame:
