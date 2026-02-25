@@ -16,7 +16,7 @@ if __name__ == "__main__":
     # DEVICE = "cpu"
     BATCH_SIZE = 64  # Good for 16GB VRAM
     EPOCHS = 500
-    SHARPNESS_LAMBDA = 0.05
+    SHARPNESS_LAMBDA = 0.01
     LR = 1e-5
 
     # 1. Pipeline Setup

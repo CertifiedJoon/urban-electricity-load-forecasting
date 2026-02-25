@@ -95,7 +95,7 @@ class IdealPytorchDataset(Dataset):
         Finds a specific home by its ID and returns the raw continuous data.
         """
         # Find the specific home in our sample list
-        target_sample = None
+        target_inx = None
         for s in self.samples:
             if str(s["homeid"]) == str(home_id):
                 target_sample = s
@@ -104,10 +104,16 @@ class IdealPytorchDataset(Dataset):
         if target_sample is None:
             raise ValueError(f"Home ID {home_id} not found in dataset.")
 
+        # Standardize
+        standardized_sample = (
+            target_sample["dynamic"] - self.stats["mean"]
+        ) / self.stats["std"]
+
         # Convert the full numpy array to a tensor of shape [Total_Mins, 1]
         full_power_tensor = torch.tensor(
-            target_sample["dynamic"]["value"].values, dtype=torch.float32
+            standardized_sample["value"].values, dtype=torch.float32
         ).unsqueeze(-1)
+
         static_data = target_sample["static"]
         # Get the static socio-economic features
         static_features = torch.tensor(

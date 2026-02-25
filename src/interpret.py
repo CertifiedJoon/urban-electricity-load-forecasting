@@ -28,18 +28,19 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
             x_hist = full_data[t - history_len : t].unsqueeze(0).to(device)
             s_feat = static_feat.unsqueeze(0).to(device)
 
-            # Check for "11 patch" bug: x_hist should be [1, 86400, 1]
             if x_hist.shape[1] != history_len:
                 print(f"Warning: Unexpected history slice size: {x_hist.shape}")
 
             mu, sigma, attn = model(x_hist, s_feat)
 
             # 2. Store results
-            predictions.append(mu.item())
-            uncertainties.append(sigma.item())
+            predictions.append(dataset.denormalize(mu.item()))
+            uncertainties.append(sigma.item() * dataset.stats["std"])
 
             # ACTUAL: We compare the prediction made at 't' with the reality at 't + 240'
-            actuals_at_target.append(full_data[t + lead_time, 0].item())
+            actuals_at_target.append(
+                dataset.denormalize(full_data[t + lead_time, 0].item())
+            )
 
             # 3. Attention (Last token)
             attention_accumulator.append(attn[0, -1, :].cpu().numpy())
@@ -64,8 +65,8 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
     ax1.plot(time_axis, predictions, color="green", label="Forecast")
     ax1.fill_between(
         time_axis,
-        np.array(predictions) - 1,
-        np.array(predictions) + 1,
+        np.array(predictions) - np.array(uncertainties),
+        np.array(predictions) + np.array(uncertainties),
         color="green",
         alpha=0.1,
     )
