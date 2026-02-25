@@ -16,6 +16,8 @@ if __name__ == "__main__":
     # DEVICE = "cpu"
     BATCH_SIZE = 64  # Good for 16GB VRAM
     EPOCHS = 500
+    SHARPNESS_LAMBDA = 0.05
+    LR = 1e-5
 
     # 1. Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
@@ -38,9 +40,7 @@ if __name__ == "__main__":
     val_ids = home_ids[split_idx:]
 
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
-    # choice = int(input())
-    choice = 1
-
+    choice = int(input())
     # choice = 1
 
     if choice == 1:
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         # 2. Model Setup
         model = InterpretableSocioTransformer(orchestrator.cardinalities)
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -63,8 +63,8 @@ if __name__ == "__main__":
         )
 
         for epoch in range(EPOCHS):
-            train_loss = trainer.train_epoch(epoch)
-            val_loss = trainer.validate()
+            train_loss = trainer.train_epoch(epoch, lmbda=SHARPNESS_LAMBDA)
+            val_loss = trainer.validate(lmbda=SHARPNESS_LAMBDA)
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
             )
@@ -109,7 +109,7 @@ if __name__ == "__main__":
         model = InterpretableSocioTransformer(
             orchestrator.cardinalities, smoke_test=True
         )
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -122,8 +122,8 @@ if __name__ == "__main__":
         )
 
         for epoch in range(EPOCHS):
-            train_loss = trainer.train_epoch(epoch)
-            val_loss = trainer.validate()
+            train_loss = trainer.train_epoch(epoch, SHARPNESS_LAMBDA)
+            val_loss = trainer.validate(lmbda=SHARPNESS_LAMBDA)
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
             )

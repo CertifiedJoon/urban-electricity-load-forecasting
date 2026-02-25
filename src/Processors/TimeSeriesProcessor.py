@@ -34,10 +34,6 @@ class LoadProcessor(IdealDataProcessor):
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df.set_index("timestamp", inplace=True)
 
-        # print(f"{str(home_id)}: {len(df)} entries before resampling")
-        # df = df.resample('10min').mean()
-        # print(f"{str(home_id)}: {len(df)} entries after resampling")
-
         # Log-scaling for stability
         df["value"] = np.log1p(df["value"])
         return df

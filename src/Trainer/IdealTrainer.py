@@ -21,11 +21,13 @@ class IdealTrainer:
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()
         self.bad_end = pd.to_datetime("2018-04-17 09:50:00").timestamp()
 
-    def nll_loss(self, mu, sigma, target):
+    def nll_loss(self, mu, sigma, target, lmbda):
         dist = torch.distributions.Normal(mu, sigma)
-        return -dist.log_prob(target).mean()
+        return -dist.log_prob(target).mean() + lmbda * torch.mean(
+            sigma
+        )  # penalize high sigma
 
-    def train_epoch(self, epoch_idx):
+    def train_epoch(self, epoch_idx, lmbda):
         self.model.train()
         total_loss, batches = 0, 0
         for batch in self.train_loader:
@@ -38,7 +40,7 @@ class IdealTrainer:
             self.optimizer.zero_grad()
             with autocast(self.device):
                 mu, sigma = self.model(x_dyn, x_stat)
-                loss = self.nll_loss(mu, sigma, target)
+                loss = self.nll_loss(mu, sigma, target, lmbda)
 
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -52,7 +54,7 @@ class IdealTrainer:
         self.history["train_loss"].append(avg_loss)
         return avg_loss
 
-    def validate(self):
+    def validate(self, lmbda):
         self.model.eval()
         total_loss, batches = 0, 0
         with torch.no_grad():
@@ -63,7 +65,7 @@ class IdealTrainer:
                     batch["target"].to(self.device),
                 )
                 mu, sigma, _ = self.model(x_dyn, x_stat)
-                loss = self.nll_loss(mu, sigma, target)
+                loss = self.nll_loss(mu, sigma, target, lmbda)
                 total_loss += loss.item()
                 batches += 1
 

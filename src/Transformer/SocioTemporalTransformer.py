@@ -64,6 +64,8 @@ class InterpretableSocioTransformer(nn.Module):
             nn.Linear(256, 1),  # Changed from 240 to 1
         )
 
+        self.static_dropout = nn.Dropout(p=0.2)
+
     def forward(self, x_dyn, x_stat):
         B, L, C = x_dyn.shape
 
@@ -75,6 +77,7 @@ class InterpretableSocioTransformer(nn.Module):
         h_static = torch.stack(
             [emb(x_stat[:, i]) for i, emb in enumerate(self.static_embeddings)], dim=1
         )
+        h_static = self.static_dropout(h_static)
 
         # 3. Cross-Attention Fusion
         # Query: Time | Key/Value: Static

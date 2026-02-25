@@ -82,8 +82,6 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
         cmap="Blues",
     )
     # Clean up labels
-    ax2.set_yticks(np.arange(num_features) + 0.5)  # Center labels in bins
-    ax2.set_yticklabels(range(num_features))
     ax2.set_ylabel("Socio Features")
     ax2.set_xlabel("Time (Hours into Week)")
 

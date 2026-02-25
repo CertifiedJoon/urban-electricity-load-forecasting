@@ -31,6 +31,11 @@ class IdealPytorchDataset(Dataset):
                 )
         print(f"Loaded {len(self.samples)} valid homes.")
 
+        # get global stats to use in standardization
+        self.stats = calculate_global_stats(
+            [sample["dynamic"] for sample in self.samples]
+        )
+
     def __len__(self):
         return len(self.samples)
 
@@ -49,6 +54,8 @@ class IdealPytorchDataset(Dataset):
 
         # Grab window + shift extra step
         window = full_dyn.iloc[start_idx : start_idx + self.fetch_size]
+        # standardize
+        window = (window - self.stats["mean"]) / self.stats["std"]
         values = window["value"].values
 
         # shift 4 hours
@@ -121,3 +128,15 @@ class IdealPytorchDataset(Dataset):
         )
 
         return full_power_tensor, static_features
+
+    def denormalize(self, val):
+        """Converts model output back to log-scale for plotting"""
+        if self.stats:
+            return (val * self.stats["std"]) + self.stats["mean"]
+        return val
+
+
+def calculate_global_stats(samples_list):
+    # Combine all power data into one array to find the true population mean/std
+    all_power = np.concatenate(samples_list)
+    return {"mean": np.mean(all_power), "std": np.std(all_power)}
