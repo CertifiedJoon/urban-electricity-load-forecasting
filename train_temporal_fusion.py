@@ -14,9 +14,9 @@ if __name__ == "__main__":
     DATA_DIR = "data"  # Update this path
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     # DEVICE = "cpu"
-    BATCH_SIZE = 16  # Good for 16GB VRAM
+    BATCH_SIZE = 8  # Good for 16GB VRAM
     EPOCHS = 2000
-    LR = 1e-5
+    LR = 5e-6
     STATIC_FEATURES = [
         "residents",
         "income_band",
@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     # 1. Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=50, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=300, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=30
+            optimizer, mode="min", factor=0.5, patience=20
         )
 
         # 3. Training & Eval
@@ -74,7 +74,7 @@ if __name__ == "__main__":
         )
 
         for epoch in range(EPOCHS):
-            train_loss = trainer.train_epoch(epoch)
+            train_loss = trainer.train_epoch()
             val_loss = trainer.validate()
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"

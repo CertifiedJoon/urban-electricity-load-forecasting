@@ -7,7 +7,7 @@ import sys
 
 def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
     model.eval()
-    history_len = 86400  # 60 Days
+    history_len = 43200  # 60 Days
     lead_time = 240  # 4 Hours
     plot_len = 10080  # 1 Week
     step_jump = 10  # Jump in minutes for plotting speed
@@ -99,9 +99,9 @@ def visualize_tft_rolling_week(
     model.eval()
 
     # 1. Config
-    history_mins = 86400  # 60 days
+    history_mins = 43200  # 60 days
     lead_time = 240  # 4 hours
-    plot_len = 300  # 1 week
+    plot_len = 10080  # 1 week
     step_jump = 10  # Predict every 10 mins
 
     if feature_names is None:
@@ -173,7 +173,7 @@ def visualize_tft_rolling_week(
     # 1. Temporal Attention Aggregation (8640 patches -> 60 days)
     # Patches per day = 8640 / 60 = 144
     attn_matrix = np.array(temporal_attn_list)  # [Steps, 2880]
-    daily_temporal_attn = attn_matrix.reshape(len(attn_matrix), 60, 144).mean(
+    daily_temporal_attn = attn_matrix.reshape(len(attn_matrix), 60, 72).mean(
         axis=2
     )  # [Steps, 60]
 

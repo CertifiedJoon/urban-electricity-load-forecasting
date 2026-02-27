@@ -4,7 +4,7 @@ import numpy as np
 
 
 class IdealPytorchDataset(Dataset):
-    def __init__(self, home_ids, orchestrator, window_size=86400, prediction_shift=240):
+    def __init__(self, home_ids, orchestrator, window_size=43200, prediction_shift=240):
         # We need window_size + 1 to create the shift
         self.window_size = window_size
         self.fetch_size = window_size + prediction_shift
