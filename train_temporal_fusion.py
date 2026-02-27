@@ -1,9 +1,9 @@
 from src.Orchestrator.IdealDatasetOrchestrator import IdealDatasetOrchestrator
-from src.Transformer.SocioTemporalTransformer import InterpretableSocioTransformer
+from src.Transformer.TemporalFusionTransformer import TemporalFusionTransformer
 from src.PytorchDataset.IdealPytorchDataset import IdealPytorchDataset
-from src.Trainer.IdealTrainer import IdealTrainer
+from src.Trainer.TemporalFusionTrainer import TemporalFusionTrainer
 from src.Trainer.EarlyStopper import EarlyStopping
-from src.interpret import visualize_rolling_week_point
+from src.interpret import visualize_tft_rolling_week
 from torch.utils.data import DataLoader
 import torch
 import random
@@ -14,10 +14,22 @@ if __name__ == "__main__":
     DATA_DIR = "data"  # Update this path
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     # DEVICE = "cpu"
-    BATCH_SIZE = 64  # Good for 16GB VRAM
-    EPOCHS = 500
-    SHARPNESS_LAMBDA = 0.01
+    BATCH_SIZE = 16  # Good for 16GB VRAM
+    EPOCHS = 2000
     LR = 1e-5
+    STATIC_FEATURES = [
+        "residents",
+        "income_band",
+        "hometype",
+        "urban_rural_class",
+        "build_era",
+        "occupied_days",
+        "occupied_nights",
+        "workingstatus",
+        "gender",
+        "ageband",
+        "weeklyhoursofwork",
+    ]
 
     # 1. Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
@@ -42,14 +54,13 @@ if __name__ == "__main__":
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
     choice = int(input())
     # choice = 1
-
     if choice == 1:
         val_dataset = IdealPytorchDataset(val_ids, orchestrator)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
         train_dataset = IdealPytorchDataset(train_ids, orchestrator)
         train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
         # 2. Model Setup
-        model = InterpretableSocioTransformer(orchestrator.cardinalities)
+        model = TemporalFusionTransformer(orchestrator.cardinalities)
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
@@ -58,13 +69,13 @@ if __name__ == "__main__":
         )
 
         # 3. Training & Eval
-        trainer = IdealTrainer(
+        trainer = TemporalFusionTrainer(
             model, train_loader, val_loader, optimizer, scheduler, device=DEVICE
         )
 
         for epoch in range(EPOCHS):
-            train_loss = trainer.train_epoch(epoch, lmbda=SHARPNESS_LAMBDA)
-            val_loss = trainer.validate(lmbda=SHARPNESS_LAMBDA)
+            train_loss = trainer.train_epoch(epoch)
+            val_loss = trainer.validate()
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
             )
@@ -80,17 +91,29 @@ if __name__ == "__main__":
 
         # Interpret results
         interpret_batch = next(iter(val_loader))
-        visualize_rolling_week_point(model, val_dataset, home_ids[split_idx], DEVICE)
+        visualize_tft_rolling_week(
+            model,
+            val_dataset,
+            home_ids[split_idx],
+            feature_names=STATIC_FEATURES,
+            device=DEVICE,
+        )
     elif choice == 2:
         val_dataset = IdealPytorchDataset(val_ids, orchestrator)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
         print("Input .pth path. current path is " + os.getcwd() + ":")
         model_path = input()
-        model = InterpretableSocioTransformer(orchestrator.cardinalities)
+        model = TemporalFusionTransformer(orchestrator.cardinalities)
         model.load_state_dict(torch.load(model_path, map_location="cuda"))
         model.to("cuda")
         interpret_batch = next(iter(val_loader))
-        visualize_rolling_week_point(model, val_dataset, home_ids[split_idx], DEVICE)
+        visualize_tft_rolling_week(
+            model,
+            val_dataset,
+            home_ids[split_idx],
+            feature_names=STATIC_FEATURES,
+            device=DEVICE,
+        )
     elif choice == 3:
         print("RUNNING IN SMOKE TEST MODE (CPU)")
         # Overwrite config for speed
@@ -106,9 +129,7 @@ if __name__ == "__main__":
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         # 2. Model Setup
-        model = InterpretableSocioTransformer(
-            orchestrator.cardinalities, smoke_test=True
-        )
+        model = TemporalFusionTransformer(orchestrator.cardinalities, smoke_test=True)
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
@@ -117,13 +138,13 @@ if __name__ == "__main__":
         )
 
         # 3. Training & Eval
-        trainer = IdealTrainer(
+        trainer = TemporalFusionTrainer(
             model, train_loader, val_loader, optimizer, scheduler, device=DEVICE
         )
 
         for epoch in range(EPOCHS):
-            train_loss = trainer.train_epoch(epoch, SHARPNESS_LAMBDA)
-            val_loss = trainer.validate(lmbda=SHARPNESS_LAMBDA)
+            train_loss = trainer.train_epoch()
+            val_loss = trainer.validate()
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
             )
@@ -139,6 +160,12 @@ if __name__ == "__main__":
 
         # Interpret results
         interpret_batch = next(iter(val_loader))
-        visualize_rolling_week_point(model, val_dataset, home_ids[split_idx], DEVICE)
+        visualize_tft_rolling_week(
+            model,
+            val_dataset,
+            home_ids[split_idx],
+            feature_names=STATIC_FEATURES,
+            device=DEVICE,
+        )
     else:
         print("No data loaded. Check DATA_DIR path.")

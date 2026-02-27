@@ -4,7 +4,25 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-class IdealTrainer:
+def quantile_loss(predictions, targets, quantiles=[0.1, 0.5, 0.9]):
+    """
+    predictions: [Batch, 3]
+    targets: [Batch, 1]
+    """
+    losses = []
+    for i, q in enumerate(quantiles):
+        # Calculate error for this specific quantile
+        error = targets.squeeze() - predictions[:, i]
+
+        # Asymmetric penalty
+        loss = torch.max((q - 1) * error, q * error)
+        losses.append(loss)
+
+    # Sum over quantiles, mean over batch
+    return torch.mean(torch.sum(torch.stack(losses, dim=1), dim=1))
+
+
+class TemporalFusionTrainer:
     def __init__(
         self, model, train_loader, val_loader, optimizer, scheduler, device="cuda"
     ):
@@ -21,13 +39,7 @@ class IdealTrainer:
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()
         self.bad_end = pd.to_datetime("2018-04-17 09:50:00").timestamp()
 
-    def nll_loss(self, mu, sigma, target, lmbda):
-        dist = torch.distributions.Normal(mu, sigma)
-        return -dist.log_prob(target).mean() + lmbda * torch.mean(
-            sigma
-        )  # penalize high sigma
-
-    def train_epoch(self, epoch_idx, lmbda):
+    def train_epoch(self):
         self.model.train()
         total_loss, batches = 0, 0
         for batch in self.train_loader:
@@ -39,8 +51,8 @@ class IdealTrainer:
 
             self.optimizer.zero_grad()
             with autocast(self.device):
-                mu, sigma = self.model(x_dyn, x_stat)
-                loss = self.nll_loss(mu, sigma, target, lmbda)
+                quantiles = self.model(x_dyn, x_stat)
+                loss = quantile_loss(quantiles, target)
 
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -54,7 +66,7 @@ class IdealTrainer:
         self.history["train_loss"].append(avg_loss)
         return avg_loss
 
-    def validate(self, lmbda):
+    def validate(self):
         self.model.eval()
         total_loss, batches = 0, 0
         with torch.no_grad():
@@ -64,8 +76,10 @@ class IdealTrainer:
                     batch["x_static"].to(self.device),
                     batch["target"].to(self.device),
                 )
-                mu, sigma, _ = self.model(x_dyn, x_stat)
-                loss = self.nll_loss(mu, sigma, target, lmbda)
+                # quantiles_to_compute = torch.tensor([0.1, 0.5, 0.9])
+                # target_quartiles = torch.quantile(target, quantiles_to_compute)
+                quantiles, _, _ = self.model(x_dyn, x_stat)
+                loss = quantile_loss(quantiles, target)
                 total_loss += loss.item()
                 batches += 1
 
@@ -77,7 +91,7 @@ class IdealTrainer:
         plt.figure(figsize=(10, 5))
         plt.plot(self.history["train_loss"], label="Train Loss")
         plt.plot(self.history["val_loss"], label="Val Loss")
-        plt.title("Socio-Temporal Model Convergence")
+        plt.title("Temporal Fusion Model Convergence")
         plt.xlabel("Epoch")
         plt.legend()
         plt.grid(color="grey", linestyle="-", linewidth=0.5)
