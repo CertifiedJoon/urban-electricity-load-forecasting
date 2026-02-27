@@ -4,22 +4,30 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def quantile_loss(predictions, targets, quantiles=[0.1, 0.5, 0.9]):
+def quantile_loss(predictions, targets, patch_size=10, quantiles=[0.1, 0.5, 0.9]):
     """
-    predictions: [Batch, 3]
-    targets: [Batch, 1]
+    predictions: [Batch, Future_Patches, 3]  (e.g., [B, 24, 3])
+    targets:     [Batch, Future_Mins]        (e.g., [B, 240])
     """
+    B, _ = targets.shape
+
+    # 1. Patch the Target
+    # Reshape 240 mins into 24 patches of 10 mins, then take the mean of each patch
+    # Shape becomes: [Batch, 10]
+    targets_patched = targets.view(B, -1, patch_size).mean(dim=-1)
+
     losses = []
     for i, q in enumerate(quantiles):
-        # Calculate error for this specific quantile
-        error = targets.squeeze() - predictions[:, i]
+        # 2. Calculate error for the entire sequence at once
+        error = targets_patched - predictions[:, :, i]  # [Batch, 10]
 
-        # Asymmetric penalty
+        # 3. Asymmetric penalty
         loss = torch.max((q - 1) * error, q * error)
         losses.append(loss)
 
-    # Sum over quantiles, mean over batch
-    return torch.mean(torch.sum(torch.stack(losses, dim=1), dim=1))
+    # Stack to [Batch, 8, 3], sum over quantiles, mean over sequence and batch
+    total_loss = torch.mean(torch.sum(torch.stack(losses, dim=-1), dim=-1))
+    return total_loss
 
 
 class TemporalFusionTrainer:
@@ -43,16 +51,24 @@ class TemporalFusionTrainer:
         self.model.train()
         total_loss, batches = 0, 0
         for batch in self.train_loader:
-            x_dyn, x_stat, target = (
-                batch["x_dynamic"].to(self.device),
+            x_past_power, x_past_time, x_future_time, x_stat, y = (
+                batch["x_past_power"].to(self.device),
+                batch["x_past_time"].to(self.device),
+                batch["x_future_time"].to(self.device),
                 batch["x_static"].to(self.device),
-                batch["target"].to(self.device),
+                batch["y"].to(self.device),
             )
 
             self.optimizer.zero_grad()
-            with autocast(self.device):
-                quantiles = self.model(x_dyn, x_stat)
-                loss = quantile_loss(quantiles, target)
+            if self.device == "cuda":
+                with autocast(self.device):
+                    quantiles = self.model(
+                        x_past_power, x_past_time, x_future_time, x_stat
+                    )
+                    loss = quantile_loss(quantiles, y)
+            else:
+                quantiles = self.model(x_past_power, x_past_time, x_future_time, x_stat)
+                loss = quantile_loss(quantiles, y)
 
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -71,15 +87,17 @@ class TemporalFusionTrainer:
         total_loss, batches = 0, 0
         with torch.no_grad():
             for batch in self.val_loader:
-                x_dyn, x_stat, target = (
-                    batch["x_dynamic"].to(self.device),
+                x_past_power, x_past_time, x_future_time, x_stat, y = (
+                    batch["x_past_power"].to(self.device),
+                    batch["x_past_time"].to(self.device),
+                    batch["x_future_time"].to(self.device),
                     batch["x_static"].to(self.device),
-                    batch["target"].to(self.device),
+                    batch["y"].to(self.device),
                 )
-                # quantiles_to_compute = torch.tensor([0.1, 0.5, 0.9])
-                # target_quartiles = torch.quantile(target, quantiles_to_compute)
-                quantiles, _, _ = self.model(x_dyn, x_stat)
-                loss = quantile_loss(quantiles, target)
+                quantiles, _, _ = self.model(
+                    x_past_power, x_past_time, x_future_time, x_stat
+                )
+                loss = quantile_loss(quantiles, y)
                 total_loss += loss.item()
                 batches += 1
 

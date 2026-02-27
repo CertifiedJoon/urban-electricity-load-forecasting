@@ -9,6 +9,7 @@ import torch
 import random
 import os
 
+# os.environ["ONEDNN_VERBOSE"] = "all"
 if __name__ == "__main__":
     # Settings
     DATA_DIR = "data"  # Update this path

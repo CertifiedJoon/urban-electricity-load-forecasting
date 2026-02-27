@@ -98,107 +98,93 @@ def visualize_tft_rolling_week(
 ):
     model.eval()
 
-    # 1. Config
+    # Config
     history_mins = 43200  # 60 days
-    lead_time = 240  # 4 hours
-    plot_len = 10080  # 1 week
-    step_jump = 10  # Predict every 10 mins
+    lead_mins = 240  # 4 hours
+    plot_len = 340  # 1 week
+    step_jump = 10  # Match patch size (30 mins)
+    patches_past = history_mins // step_jump  # 4320
 
     if feature_names is None:
-        feature_names = [
-            f"Feature {i}" for i in range(11)
-        ]  # Update with your 11 col names
+        feature_names = [f"Feature {i}" for i in range(11)]
 
-    full_data, static_feat = dataset.get_full_home_stream(home_id)
+    full_power, full_time, static_feat = dataset.get_full_home_stream(home_id)
 
-    # Storage arrays
     q10_list, q50_list, q90_list, actuals = [], [], [], []
     temporal_attn_list = []
     vsn_weights_list = []
 
-    print(f"Generating TFT rolling forecast for Home {home_id}...")
+    print(f"Generating Seq2Seq Interpretable forecast for Home {home_id}...")
 
     with torch.no_grad():
         for t in range(history_mins, history_mins + plot_len, step_jump):
-            sys.stdout.write(f"\r Simulating {(t - history_mins) / plot_len * 100}% ")
-            sys.stdout.flush()
-
-            # Slice history (assumes data is already normalized or dataset handles it)
-            x_hist = full_data[t - history_mins : t].unsqueeze(0).to(device)
+            x_past_power = full_power[t - history_mins : t].unsqueeze(0).to(device)
+            x_past_time = full_time[t - history_mins : t].unsqueeze(0).to(device)
+            x_future_time = full_time[t : t + lead_mins].unsqueeze(0).to(device)
             s_feat = static_feat.unsqueeze(0).to(device)
 
             # Forward pass
-            # quantiles: [1, 3], temporal_attn: [1, L, L], static_weights: [1, 11]
-            quantiles, temporal_attn, static_weights = model(x_hist, s_feat)
-
-            # Denormalize predictions if your dataset has the stats dict
-            # (Assuming you added the denormalize method to your Dataset)
-            q10 = (
-                dataset.denormalize(quantiles[0, 0].item())
-                if hasattr(dataset, "denormalize")
-                else quantiles[0, 0].item()
-            )
-            q50 = (
-                dataset.denormalize(quantiles[0, 1].item())
-                if hasattr(dataset, "denormalize")
-                else quantiles[0, 1].item()
-            )
-            q90 = (
-                dataset.denormalize(quantiles[0, 2].item())
-                if hasattr(dataset, "denormalize")
-                else quantiles[0, 2].item()
+            # quantiles: [1, 8, 3] | attn_weights: [1, 2888, 2888] | static_weights: [1, 11]
+            quantiles, attn_weights, static_weights = model(
+                x_past_power, x_past_time, x_future_time, s_feat
             )
 
-            actual_val = (
-                dataset.denormalize(full_data[t + lead_time, 0].item())
-                if hasattr(dataset, "denormalize")
-                else full_data[t + lead_time, 0].item()
+            # 1. Extract Prediction (Last patch of the 8-patch future sequence)
+            q10, q50, q90 = (
+                quantiles[0, -1, 0].item(),
+                quantiles[0, -1, 1].item(),
+                quantiles[0, -1, 2].item(),
             )
+
+            if hasattr(dataset, "denormalize"):
+                q10, q50, q90 = map(dataset.denormalize, [q10, q50, q90])
+                actual_val = dataset.denormalize(full_power[t + lead_mins, 0].item())
+            else:
+                actual_val = full_power[t + lead_mins, 0].item()
 
             q10_list.append(q10)
             q50_list.append(q50)
             q90_list.append(q90)
             actuals.append(actual_val)
 
-            # Extract Temporal Attention: Last patch's attention over all history patches
-            # temporal_attn is [1, 8640, 8640]. We want [0, -1, :]
-            temporal_attn_list.append(temporal_attn[0, -1, :].cpu().numpy())
+            # 2. Extract Temporal Attention
+            # Look at the last future token (-1), and get its attention over the past history patches (:patches_past)
+            past_attention = attn_weights[0, -1, :patches_past].cpu().numpy()
+            temporal_attn_list.append(past_attention)
 
-            # Extract Static VSN weights: [11]
+            # 3. Extract Static VSN weights
             vsn_weights_list.append(static_weights[0].cpu().numpy())
 
-    # --- DATA PROCESSING ---
+    # --- AGGREGATION ---
     time_axis = np.arange(len(q50_list)) * step_jump / 60  # Hours into the week
 
-    # 1. Temporal Attention Aggregation (8640 patches -> 60 days)
-    # Patches per day = 8640 / 60 = 144
-    attn_matrix = np.array(temporal_attn_list)  # [Steps, 2880]
-    daily_temporal_attn = attn_matrix.reshape(len(attn_matrix), 60, 72).mean(
+    # Reshape attention: 4320 patches -> 30 days of 144 patches each
+    attn_matrix = np.array(temporal_attn_list)  # [Steps, 4320]
+    daily_temporal_attn = attn_matrix.reshape(len(attn_matrix), 30, 144).mean(
         axis=2
     )  # [Steps, 60]
 
-    # 2. VSN Weights Aggregation (Average over the week to get global importance for this home)
     avg_vsn_weights = np.array(vsn_weights_list).mean(axis=0)  # [11]
 
     # --- PLOTTING ---
     fig = plt.figure(figsize=(16, 12))
     gs = fig.add_gridspec(3, 1, height_ratios=[2.5, 1.5, 1])
 
-    # Top Plot: Quantile Forecast
+    # Top Plot: Sequence Forecast + Uncertainty
     ax1 = fig.add_subplot(gs[0])
-    ax1.plot(time_axis, actuals, color="black", alpha=0.4, label="Actual (t+4h)")
-    ax1.plot(time_axis, q50_list, color="darkgreen", label="Median Forecast (P50)")
+    ax1.plot(time_axis, actuals, color="black", alpha=0.5, label="Actual (+4h)")
+    ax1.plot(time_axis, q50_list, color="darkgreen", label="P50 Forecast")
     ax1.fill_between(
         time_axis,
         q10_list,
         q90_list,
         color="mediumseagreen",
-        alpha=0.25,
+        alpha=0.3,
         label="P10 - P90 Interval",
     )
     ax1.set_xlim(time_axis[0], time_axis[-1])
     ax1.set_ylabel("Power Usage")
-    ax1.set_title(f"TFT 4-Hour Lead Forecast: Home {home_id}")
+    ax1.set_title(f"Full TFT 4-Hour Lead Forecast: Home {home_id}")
     ax1.legend(loc="upper right")
 
     # Middle Plot: Temporal Attention (History)
@@ -215,13 +201,13 @@ def visualize_tft_rolling_week(
     ax2.set_yticklabels([f"{int(d)}d" for d in np.linspace(60, 0, 7)])
     fig.colorbar(im, ax=ax2, pad=0.01, aspect=10, label="Attention Weight")
 
-    # Bottom Plot: Variable Selection Network (Static Features)
+    # Bottom Plot: Variable Selection Network (Static Features) [Image of Variable Selection Network weights visualization]
     ax3 = fig.add_subplot(gs[2])
     sns.barplot(x=feature_names, y=avg_vsn_weights, ax=ax3, palette="viridis")
     ax3.set_ylabel("VSN Importance Weight")
     ax3.set_title("Static Feature Importance (Socio-Economic Profiles)")
-    ax3.set_ylim(0, max(avg_vsn_weights) * 1.2)  # Give a little headroom
+    ax3.set_ylim(0, max(avg_vsn_weights) * 1.2)
     plt.xticks(rotation=15)
 
     plt.tight_layout()
-    plt.savefig("interpretation")
+    plt.savefig("interpretation.png")

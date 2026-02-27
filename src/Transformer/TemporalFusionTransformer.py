@@ -46,34 +46,57 @@ class GRN(nn.Module):
 
 
 class VariableSelectionNetwork(nn.Module):
-    """Variable Selection Network (Equation 6-8 in the paper)"""
-
     def __init__(self, num_vars, d_model, dropout=0.1):
         super().__init__()
         self.num_vars = num_vars
+        self.d_model = d_model
+
+        # This GRN produces the selection weights
         self.weight_network = GRN(num_vars * d_model, num_vars, dropout=dropout)
+
+        # These GRNs process each variable individually
         self.variable_networks = nn.ModuleList(
             [GRN(d_model, d_model, dropout=dropout) for _ in range(num_vars)]
         )
 
     def forward(self, embeddings):
-        # embeddings shape: [Batch, Num_Vars, d_model]
-        flattened = embeddings.flatten(start_dim=1)  # [Batch, Num_Vars * d_model]
+        """
+        embeddings:
+          - Static:  [Batch, Num_Vars, d_model]
+          - Temporal: [Batch, Time, Num_Vars, d_model]
+        """
+        # 1. Flatten only the last two dimensions (Num_Vars and d_model)
+        # Static becomes [Batch, 96] | Temporal becomes [Batch, Time, 96]
+        flattened = embeddings.flatten(start_dim=-2)
 
-        # Calculate selection weights (Softmax over variables)
-        selection_weights = torch.softmax(
-            self.weight_network(flattened), dim=-1
-        ).unsqueeze(-1)
+        # 2. Calculate selection weights
+        # weights shape: [Batch, (Time), Num_Vars, 1]
+        weights = torch.softmax(self.weight_network(flattened), dim=-1).unsqueeze(-1)
 
-        # Process each variable through its own GRN
-        processed_vars = torch.stack(
-            [net(embeddings[:, i]) for i, net in enumerate(self.variable_networks)],
-            dim=1,
-        )
+        # 3. Process each variable through its dedicated GRN
+        # We handle 3D and 4D tensors dynamically
+        if embeddings.dim() == 4:  # Temporal
+            # Process variable i: embeddings[:, :, i, :]
+            processed_vars = torch.stack(
+                [
+                    net(embeddings[:, :, i, :])
+                    for i, net in enumerate(self.variable_networks)
+                ],
+                dim=-2,
+            )
+        else:  # Static
+            processed_vars = torch.stack(
+                [
+                    net(embeddings[:, i, :])
+                    for i, net in enumerate(self.variable_networks)
+                ],
+                dim=-2,
+            )
 
-        # Weighted sum of variables
-        fused_context = (selection_weights * processed_vars).sum(dim=1)
-        return fused_context, selection_weights.squeeze(-1)
+        # 4. Weighted sum across the Num_Vars dimension
+        fused_context = (weights * processed_vars).sum(dim=-2)
+
+        return fused_context, weights.squeeze(-1)
 
 
 class PatchEmbedding(nn.Module):
@@ -91,97 +114,118 @@ class PatchEmbedding(nn.Module):
 
 class TemporalFusionTransformer(nn.Module):
     def __init__(
-        self,
-        cardinalities,
-        patch_size=10,
-        d_model=256,  # Keep at 128 or 256 for 16GB GPU
-        num_heads=4,
-        dropout=0.1,
-        smoke_test=False,
+        self, cardinalities, patch_size=10, d_model=256, num_heads=4, smoke_test=False
     ):
         super().__init__()
         if smoke_test:
-            d_model = 64
+            d_model = 32
             num_heads = 2
+        self.patch_size = patch_size
         self.d_model = d_model
 
-        # 1. Temporal Patching
-        self.patch_embed = PatchEmbedding(patch_size, 1, d_model)
+        # --- 1. Encoders & Patching ---
+        self.power_patch_embed = nn.Linear(patch_size, d_model)
 
-        # 2. Static Covariate Encoders & VSN
-        self.num_static = len(cardinalities)
+        # Time embeddings (Hour: 24, DayOfWeek: 7)
+        self.hour_embed = nn.Embedding(24, d_model)
+        self.day_embed = nn.Embedding(7, d_model)
+
+        # Static embeddings
         self.static_embeddings = nn.ModuleList(
-            [nn.Embedding(c, d_model) for c in cardinalities]
+            [
+                nn.Embedding(num_embeddings=c, embedding_dim=d_model)
+                for c in cardinalities
+            ]
         )
-        self.static_vsn = VariableSelectionNetwork(self.num_static, d_model, dropout)
 
-        # Static Context Generators (Equation 10-12)
-        self.context_h = nn.Linear(d_model, d_model)  # LSTM initial hidden state
-        self.context_c = nn.Linear(d_model, d_model)  # LSTM initial cell state
+        # --- 2. Variable Selection Networks (VSNs) ---
+        self.static_vsn = VariableSelectionNetwork(len(cardinalities), d_model)
+        self.past_vsn = VariableSelectionNetwork(3, d_model)  # Power, Hour, Day
+        self.future_vsn = VariableSelectionNetwork(
+            2, d_model
+        )  # Hour, Day (Known future)
+
+        # --- 3. Seq2Seq LSTM (Local Processing) ---
+        self.encoder_lstm = nn.LSTM(d_model, d_model, batch_first=True)
+        self.decoder_lstm = nn.LSTM(d_model, d_model, batch_first=True)
+
+        # Static Context for LSTM initialization
+        self.context_h = nn.Linear(d_model, d_model)
+        self.context_c = nn.Linear(d_model, d_model)
         self.context_enrichment = nn.Linear(d_model, d_model)
 
-        # 3. Local Processing (LSTM)
-        self.lstm = nn.LSTM(d_model, d_model, batch_first=True)
-        self.post_lstm_gate = GLU(d_model)
-        self.post_lstm_norm = nn.LayerNorm(d_model)
+        # --- 4. Attention & Output ---
+        self.enrichment_grn = GRN(d_model, d_model, context_dim=d_model)
+        self.attention = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
 
-        # 4. Static Enrichment
-        self.static_enrichment_grn = GRN(d_model, d_model, dropout, context_dim=d_model)
-
-        # 5. Temporal Self-Attention (Using PyTorch standard for memory efficiency)
-        # Note: TFT uses shared values, but standard MHA is faster and optimized for 16GB
-        self.attention = nn.MultiheadAttention(
-            d_model, num_heads, dropout=dropout, batch_first=True
-        )
-        self.post_attn_gate = GLU(d_model)
-        self.post_attn_norm = nn.LayerNorm(d_model)
-
-        # 6. Quantile Output Head (Predicting 10th, 50th, 90th percentiles)
         self.output_layer = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.ELU(),
-            nn.Linear(d_model // 2, 3),  # 3 outputs for 3 quantiles
+            nn.Linear(d_model // 2, 3),  # [q10, q50, q90]
         )
 
-    def forward(self, x_dyn, x_stat):
-        B, L, C = x_dyn.shape
+    def forward(self, x_past_power, x_past_time, x_future_time, x_stat):
+        B = x_past_power.size(0)
 
-        # --- A. Process Static Covariates ---
-        # Embed all 11 static features
+        # A. Static Context
         static_embs = torch.stack(
             [emb(x_stat[:, i]) for i, emb in enumerate(self.static_embeddings)], dim=1
         )
-
-        # VSN creates a single rich context vector and gives us feature importance weights
         c_static, static_weights = self.static_vsn(static_embs)
 
-        # Generate LSTM initial states based entirely on Socio Features
-        h_0 = self.context_h(c_static).unsqueeze(0)  # [1, Batch, d_model]
-        c_0 = self.context_c(c_static).unsqueeze(0)  # [1, Batch, d_model]
-        c_e = self.context_enrichment(c_static)  # [Batch, d_model]
+        # Initialize LSTM states using static context
+        h_0 = self.context_h(c_static).unsqueeze(0)
+        c_0 = self.context_c(c_static).unsqueeze(0)
+        c_e = self.context_enrichment(c_static)
 
-        # --- B. Process Temporal Data ---
-        # Patch the 86,400 minutes -> 2,880 patches
-        h_time = self.patch_embed(x_dyn)  # [Batch, Patches, d_model]
+        # B. Patching & Past VSN
+        # Reshape and project power: [B, 86400, 1] -> [B, 2880, patch_size] -> [B, 2880, d_model]
+        past_power_patched = self.power_patch_embed(
+            x_past_power.squeeze(-1).view(B, -1, self.patch_size)
+        )
 
-        # Local Processing (LSTM) conditioned on Socio Features
-        lstm_out, _ = self.lstm(h_time, (h_0, c_0))
-        lstm_out = self.post_lstm_norm(h_time + self.post_lstm_gate(lstm_out))
+        # Subsample time features to match patches (take the first minute of each patch)
+        past_hour = self.hour_embed(x_past_time[:, :: self.patch_size, 0])
+        past_day = self.day_embed(x_past_time[:, :: self.patch_size, 1])
 
-        # Static Enrichment (Inject socio context into every time patch)
-        enriched = self.static_enrichment_grn(lstm_out, context=c_e)
+        past_fused, _ = self.past_vsn(
+            torch.stack([past_power_patched, past_hour, past_day], dim=2)
+        )
 
-        # --- C. Temporal Self-Attention ---
-        # The model finds long-term dependencies (e.g., Weekly Seasonality)
-        attn_out, temporal_attn_weights = self.attention(enriched, enriched, enriched)
-        fused = self.post_attn_norm(enriched + self.post_attn_gate(attn_out))
+        # C. Future VSN
+        future_hour = self.hour_embed(x_future_time[:, :: self.patch_size, 0])
+        future_day = self.day_embed(x_future_time[:, :: self.patch_size, 1])
 
-        # --- D. Forecast Head ---
-        # Take the final token (representing 'now') to predict the future point
-        final_token = fused[:, -1, :]
-        quantiles = self.output_layer(final_token)  # [Batch, 3]
+        future_fused, _ = self.future_vsn(torch.stack([future_hour, future_day], dim=2))
 
+        # D. Encoder-Decoder LSTM
+        # Run encoder on history
+        past_fused = past_fused.contiguous()
+        future_fused = future_fused.contiguous()
+        h_0 = h_0.contiguous()
+        c_0 = c_0.contiguous()
+        encoder_out, (h_n, c_n) = self.encoder_lstm(past_fused, (h_0, c_0))
+
+        # Run decoder on future (using the last state of the encoder)
+        h_n = h_n.contiguous()
+        c_n = c_n.contiguous()
+        decoder_out, _ = self.decoder_lstm(future_fused, (h_n, c_n))
+
+        # Combine encoder and decoder outputs for attention
+        full_seq = torch.cat([encoder_out, decoder_out], dim=1)
+
+        # E. Enrichment & Attention
+        enriched = self.enrichment_grn(full_seq, context=c_e)
+        attn_out, attn_weights = self.attention(enriched, enriched, enriched)
+
+        # F. Sequence Forecast
+        # We only want to predict the FUTURE steps (the last N patches)
+        num_future_patches = future_fused.size(1)
+        future_representations = attn_out[:, -num_future_patches:, :]
+
+        # Output shape: [Batch, Future_Patches, 3_Quantiles]
+        quantiles = self.output_layer(future_representations)
         if self.training:
             return quantiles
         else:
-            return quantiles, temporal_attn_weights, static_weights
+            return quantiles, attn_weights, static_weights

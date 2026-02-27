@@ -32,10 +32,12 @@ class LoadProcessor(IdealDataProcessor):
         df = pd.read_csv(file_path)
 
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df.set_index("timestamp", inplace=True)
 
         # Log-scaling for stability
         df["value"] = np.log1p(df["value"])
+        df["hour"] = df["timestamp"].dt.hour
+        df["dayofweek"] = df["timestamp"].dt.weekday
+        df.set_index("timestamp", inplace=True)
         return df
 
 
