@@ -55,19 +55,23 @@ class IdealPytorchDataset(Dataset):
 
         # Grab window + shift extra step
         input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size]
-        # standardize
+        # past seq
         input_seq.loc[:, "value"] = (
             input_seq["value"] - self.stats["mean"]
         ) / self.stats["std"]
 
         x_past_power = torch.from_numpy(input_seq["value"].values).float().unsqueeze(-1)
         x_past_time = torch.from_numpy(input_seq[["hour", "dayofweek"]].values).long()
+        # future seq
         future_seq = full_dyn[
             start_idx
             + self.window_size : start_idx
             + self.window_size
             + self.prediction_shift
         ]
+        future_seq.loc[:, "value"] = (
+            future_seq["value"] - self.stats["mean"]
+        ) / self.stats["std"]
         x_future_time = torch.from_numpy(
             future_seq[["hour", "dayofweek"]].values
         ).long()

@@ -101,8 +101,8 @@ def visualize_tft_rolling_week(
     # Config
     history_mins = 43200  # 60 days
     lead_mins = 240  # 4 hours
-    plot_len = 340  # 1 week
-    step_jump = 10  # Match patch size (30 mins)
+    plot_len = 10080  # 1 week
+    step_jump = 10  # Match patch size (10 mins)
     patches_past = history_mins // step_jump  # 4320
 
     if feature_names is None:
@@ -194,11 +194,11 @@ def visualize_tft_rolling_week(
         aspect="auto",
         origin="upper",
         cmap="Blues",
-        extent=[time_axis[0], time_axis[-1], 60, 0],
+        extent=[time_axis[0], time_axis[-1], 30, 0],
     )
     ax2.set_ylabel("Days in Past")
-    ax2.set_yticks(np.linspace(0, 60, 7))
-    ax2.set_yticklabels([f"{int(d)}d" for d in np.linspace(60, 0, 7)])
+    ax2.set_yticks(np.linspace(0, 30, 7))
+    ax2.set_yticklabels([f"{int(d)}d" for d in np.linspace(30, 0, 7)])
     fig.colorbar(im, ax=ax2, pad=0.01, aspect=10, label="Attention Weight")
 
     # Bottom Plot: Variable Selection Network (Static Features) [Image of Variable Selection Network weights visualization]
