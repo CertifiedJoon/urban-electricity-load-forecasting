@@ -34,7 +34,7 @@ if __name__ == "__main__":
 
     # 1. Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=500, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=300, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -53,8 +53,8 @@ if __name__ == "__main__":
     val_ids = home_ids[split_idx:]
 
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
-    # choice = int(input())
-    choice = 1
+    choice = int(input())
+    # choice = 1
     if choice == 1:
         val_dataset = IdealPytorchDataset(val_ids, orchestrator)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=30
+            optimizer, mode="min", factor=0.5, patience=2
         )
 
         # 3. Training & Eval
