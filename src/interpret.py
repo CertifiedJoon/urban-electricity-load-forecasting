@@ -94,7 +94,7 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
 
 
 def visualize_tft_rolling_week(
-    model, dataset, home_id, feature_names=None, device="cuda"
+    model, dataset, home_id, feature_names=None, device="cuda", smoke_test=False
 ):
     model.eval()
 
@@ -102,6 +102,8 @@ def visualize_tft_rolling_week(
     history_mins = 43200  # 60 days
     lead_mins = 240  # 4 hours
     plot_len = 10080  # 1 week
+    if smoke_test:
+        plot_len = 300
     step_jump = 10  # Match patch size (10 mins)
     patches_past = history_mins // step_jump  # 4320
 
@@ -211,3 +213,115 @@ def visualize_tft_rolling_week(
 
     plt.tight_layout()
     plt.savefig("interpretation.png")
+
+
+from matplotlib.colors import LinearSegmentedColormap
+
+
+def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test=False):
+    model.eval()
+
+    # Configuration
+    history_mins = 43200  # 60 days
+    lead_mins = 240  # 4 hours
+    plot_len = 10080  # 1 week
+    if smoke_test:
+        plot_len = 300  # smoketest
+    patch_size = 10  # 30-min steps
+
+    # 1. Fetch Data
+    full_power, full_time, static_feat = dataset.get_full_home_stream(home_id)
+
+    num_time_steps = plot_len // patch_size
+    time_axis = np.arange(num_time_steps) * (patch_size / 60)  # Converted to Hours
+
+    # Extract the true actuals for the plotting window to set Y-axis boundaries
+    start_idx = history_mins
+    end_idx = history_mins + plot_len
+    actuals = full_power[start_idx:end_idx, 0].numpy().reshape(-1, 10).mean(axis=1)
+
+    if hasattr(dataset, "denormalize"):
+        actuals = np.array([dataset.denormalize(val) for val in actuals])
+
+    max_pow = np.max(actuals) * 1.5
+    min_pow = max(0, np.min(actuals) - 0.5)
+    num_power_bins = 250
+    power_y = np.linspace(min_pow, max_pow, num_power_bins)
+
+    # 2. Initialize the 2D Heatmap Matrix
+    # Shape: [Power_Bins, Time_Steps]
+    density_matrix = np.zeros((num_power_bins, num_time_steps))
+
+    print(f"Generating 4-Hour Overlapping Heatmap for Home {home_id}...")
+
+    with torch.no_grad():
+        for step_idx in range(num_time_steps):
+            t = history_mins + step_idx * patch_size
+
+            # Prepare inputs
+            x_past_power = full_power[t - history_mins : t].unsqueeze(0).to(device)
+            x_past_time = full_time[t - history_mins : t].unsqueeze(0).to(device)
+            x_future_time = full_time[t : t + lead_mins].unsqueeze(0).to(device)
+            s_feat = static_feat.unsqueeze(0).to(device)
+
+            # Forward pass (Handling the 3-item eval tuple return)
+            if device == "cuda":
+                with torch.amp.autocast(device_type="cuda"):
+                    quantiles, _, _ = model(
+                        x_past_power, x_past_time, x_future_time, s_feat
+                    )
+            else:
+                quantiles, _, _ = model(
+                    x_past_power, x_past_time, x_future_time, s_feat
+                )
+
+            # quantiles shape: [1, 8, 3] -> (P10, P50, P90)
+            q_vals = quantiles[0].cpu().numpy()
+
+            # 3. Project density onto the matrix for all 8 future steps
+            for i in range(lead_mins // patch_size):
+                target_step_idx = (
+                    step_idx + i + 1
+                )  # The exact time column this patch predicts
+
+                # If the prediction falls within our plotting window
+                if target_step_idx < num_time_steps:
+                    q10, q50, q90 = q_vals[i, 0], q_vals[i, 1], q_vals[i, 2]
+
+                    if hasattr(dataset, "denormalize"):
+                        q10, q50, q90 = map(dataset.denormalize, [q10, q50, q90])
+
+                    # Estimate Gaussian standard deviation from the P10-P90 spread.
+                    # P10 to P90 covers ~2.56 standard deviations in a normal distribution
+                    sigma = max((q90 - q10) / 2.56, 1e-3)
+
+                    # Calculate Gaussian probability density over the entire Y-axis grid
+                    pdf = np.exp(-0.5 * ((power_y - q50) / sigma) ** 2)
+
+                    # Accumulate density
+                    density_matrix[:, target_step_idx] += pdf
+
+    # --- PLOTTING ---
+    fig, ax = plt.subplots(figsize=(16, 6))
+
+    # A dark colormap (inferno or magma) looks incredible for density plots
+    cmap = plt.cm.inferno
+
+    # Plot the heatmap
+    im = ax.pcolormesh(time_axis, power_y, density_matrix, shading="auto", cmap=cmap)
+
+    # Overlay the actual ground truth as a high-contrast line (cyan looks great on inferno)
+    ax.plot(
+        time_axis, actuals, color="cyan", linewidth=1.5, label="Actual Power", alpha=0.9
+    )
+
+    ax.set_title(f"Rolling 4-Hour Probability Density Heatmap - Home {home_id}")
+    ax.set_xlabel("Hours into Test Week")
+    ax.set_ylabel("Power Usage")
+    ax.legend(loc="upper left")
+
+    # Add colorbar for density magnitude
+    fig.colorbar(im, ax=ax, label="Cumulative Forecast Consensus")
+
+    plt.tight_layout()
+    plt.show()

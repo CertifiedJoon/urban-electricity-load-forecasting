@@ -3,7 +3,7 @@ from src.Transformer.TemporalFusionTransformer import TemporalFusionTransformer
 from src.PytorchDataset.IdealPytorchDataset import IdealPytorchDataset
 from src.Trainer.TemporalFusionTrainer import TemporalFusionTrainer
 from src.Trainer.EarlyStopper import EarlyStopping
-from src.interpret import visualize_tft_rolling_week
+from src.interpret import visualize_tft_rolling_week, visualize_density_heatmap
 from torch.utils.data import DataLoader
 import torch
 import random
@@ -12,9 +12,9 @@ import os
 # os.environ["ONEDNN_VERBOSE"] = "all"
 if __name__ == "__main__":
     # Settings
-    DATA_DIR = "data"  
+    DATA_DIR = "data"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    accumulation_step = 4 # multiply to batchsize!
+    accumulation_step = 4  # multiply to batchsize!
     BATCH_SIZE = 8
     EPOCHS = 200
     LR = 1e-6
@@ -92,6 +92,9 @@ if __name__ == "__main__":
             feature_names=STATIC_FEATURES,
             device=DEVICE,
         )
+        visualize_density_heatmap(
+            model, val_dataset, home_ids[split_idx], device=DEVICE
+        )
     elif choice == 2:
         val_dataset = IdealPytorchDataset(val_ids, orchestrator)
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -107,6 +110,9 @@ if __name__ == "__main__":
             home_ids[split_idx],
             feature_names=STATIC_FEATURES,
             device=DEVICE,
+        )
+        visualize_density_heatmap(
+            model, val_dataset, home_ids[split_idx], device=DEVICE
         )
     elif choice == 3:
         print("RUNNING IN SMOKE TEST MODE (CPU)")
@@ -149,6 +155,10 @@ if __name__ == "__main__":
             home_ids[split_idx],
             feature_names=STATIC_FEATURES,
             device=DEVICE,
+            smoke_test=True,
+        )
+        visualize_density_heatmap(
+            model, val_dataset, home_ids[split_idx], device=DEVICE, smoke_test=True
         )
     else:
         print("No data loaded. Check DATA_DIR path.")
