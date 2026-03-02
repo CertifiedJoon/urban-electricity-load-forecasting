@@ -47,10 +47,11 @@ class TemporalFusionTrainer:
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()
         self.bad_end = pd.to_datetime("2018-04-17 09:50:00").timestamp()
 
-    def train_epoch(self):
+    def train_epoch(self, accum_step):
         self.model.train()
         total_loss, batches = 0, 0
-        for batch in self.train_loader:
+        self.optimizer.zero_grad()
+        for i, batch in enumerate(self.train_loader):
             x_past_power, x_past_time, x_future_time, x_stat, y = (
                 batch["x_past_power"].to(self.device),
                 batch["x_past_time"].to(self.device),
@@ -59,22 +60,24 @@ class TemporalFusionTrainer:
                 batch["y"].to(self.device),
             )
 
-            self.optimizer.zero_grad()
             if self.device == "cuda":
                 with autocast(self.device):
                     quantiles = self.model(
                         x_past_power, x_past_time, x_future_time, x_stat
                     )
-                    loss = quantile_loss(quantiles, y)
+                    loss = quantile_loss(quantiles, y) / accum_step
             else:
                 quantiles = self.model(x_past_power, x_past_time, x_future_time, x_stat)
                 loss = quantile_loss(quantiles, y)
 
             self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.1)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+                
+            if (i + 1) % accum_step == 0:
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.1)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
 
             total_loss += loss.item()
             batches += 1
@@ -83,11 +86,11 @@ class TemporalFusionTrainer:
         self.history["train_loss"].append(avg_loss)
         return avg_loss
 
-    def validate(self):
+    def validate(self, accum_step):
         self.model.eval()
         total_loss, batches = 0, 0
         with torch.no_grad():
-            for batch in self.val_loader:
+            for i, batch in enumerate(self.val_loader):
                 x_past_power, x_past_time, x_future_time, x_stat, y = (
                     batch["x_past_power"].to(self.device),
                     batch["x_past_time"].to(self.device),
@@ -98,7 +101,7 @@ class TemporalFusionTrainer:
                 quantiles, _, _ = self.model(
                     x_past_power, x_past_time, x_future_time, x_stat
                 )
-                loss = quantile_loss(quantiles, y)
+                loss = quantile_loss(quantiles, y) / accum_step
                 total_loss += loss.item()
                 batches += 1
 
