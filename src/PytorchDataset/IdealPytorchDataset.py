@@ -46,12 +46,36 @@ class IdealPytorchDataset(Dataset):
         full_dyn = sample["dynamic"]
         static_data = sample["static"]
 
-        # Random slice
         max_start = len(full_dyn) - self.window_size - self.prediction_shift
+
+        # 1. Pre-calculate where the spikes are (e.g., above the 85th percentile)
+        # This gives us a list of valid starting indices that guarantee a spike in the target
+        spike_threshold = full_dyn["value"].quantile(0.85)
+
+        # Find all indices where power is high
+        high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
+
+        # Shift those indices backwards by (lead_mins) so the spike falls exactly inside the target window
+        valid_spike_starts = (
+            high_power_idx
+            - self.window_size
+            - int(self.prediction_shift * np.random.rand())
+        )
+
+        # Filter out negative starting indices or ones too close to the end
+        spike_start_pool = valid_spike_starts[
+            (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
+        ]
+
         if max_start <= 0:
             start_idx = 0
         else:
-            start_idx = np.random.randint(0, max_start)
+            # sample "spikey" sets with 50% chance.
+            if np.random.rand() < 0.5 and len(spike_start_pool):
+                start_idx = np.random.choice(spike_start_pool)
+            # random slice
+            else:
+                start_idx = np.random.randint(0, max_start)
 
         # Grab window + shift extra step
         input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size]
