@@ -134,7 +134,7 @@ class TemporalFusionTransformer(nn.Module):
         self.temperature_proj = nn.Linear(1, d_model)
 
         # weather conditions embedding (30 unique weather conditions)
-        self.weather_conditions_embed = nn.Embedding(30. d_model)
+        self.weather_conditions_embed = nn.Embedding(30, d_model)
 
         # Static embeddings
         self.static_embeddings = nn.ModuleList(
@@ -146,7 +146,9 @@ class TemporalFusionTransformer(nn.Module):
 
         # --- 2. Variable Selection Networks (VSNs) ---
         self.static_vsn = VariableSelectionNetwork(len(cardinalities), d_model)
-        self.past_vsn = VariableSelectionNetwork(5, d_model)  # power, hour, day, temperature, weather conditions
+        self.past_vsn = VariableSelectionNetwork(
+            5, d_model
+        )  # power, hour, day, temperature, weather conditions
         self.future_vsn = VariableSelectionNetwork(
             4, d_model
         )  # hour, day, tempearture, weather conditions (known future)
@@ -170,7 +172,17 @@ class TemporalFusionTransformer(nn.Module):
             nn.Linear(d_model // 2, 3),  # [q10, q50, q90]
         )
 
-    def forward(self, x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat):
+    def forward(
+        self,
+        x_past_power,
+        x_past_time,
+        x_past_temperature,
+        x_past_weather_conditions,
+        x_future_time,
+        x_future_temperature,
+        x_future_weather_conditions,
+        x_stat,
+    ):
         B = x_past_power.size(0)
 
         # A. Static Context
@@ -193,18 +205,45 @@ class TemporalFusionTransformer(nn.Module):
         # Subsample time features to match patches (take the first minute of each patch)
         past_hour = self.hour_embed(x_past_time[:, :: self.patch_size, 0])
         past_day = self.day_embed(x_past_time[:, :: self.patch_size, 1])
-        past_temperature = self.temperature_proj(x_past_temperature[:, :: self.patch_size, :])
-        past_weather_conditions = self.weather_conditions_embed(x_past_weather_conditions[:, ::self.path_size])
+        past_temperature = self.temperature_proj(
+            x_past_temperature[:, :: self.patch_size, :]
+        )
+        past_weather_conditions = self.weather_conditions_embed(
+            x_past_weather_conditions[:, :: self.patch_size]
+        )
         past_fused, _ = self.past_vsn(
-            torch.stack([past_power_patched, past_hour, past_day, past_temperature, past_weather_conditions], dim=2)
+            torch.stack(
+                [
+                    past_power_patched,
+                    past_hour,
+                    past_day,
+                    past_temperature,
+                    past_weather_conditions,
+                ],
+                dim=2,
+            )
         )
 
         # C. Future VSN
         future_hour = self.hour_embed(x_future_time[:, :: self.patch_size, 0])
         future_day = self.day_embed(x_future_time[:, :: self.patch_size, 1])
-        future_temperature = self.temp_proj(x_future_temperature[:, ::self.patch_size, :])
-        future_weather_conditions = self.condition_embed(x_future_weather_conditions[:, ::self.patch_size])
-        future_fused, _ = self.future_vsn(torch.stack([future_hour, future_day, future_temperature, future_fused], dim=2))
+        future_temperature = self.temperature_proj(
+            x_future_temperature[:, :: self.patch_size, :]
+        )
+        future_weather_conditions = self.weather_conditions_embed(
+            x_future_weather_conditions[:, :: self.patch_size]
+        )
+        future_fused, _ = self.future_vsn(
+            torch.stack(
+                [
+                    future_hour,
+                    future_day,
+                    future_temperature,
+                    future_weather_conditions,
+                ],
+                dim=2,
+            )
+        )
 
         # D. Encoder-Decoder LSTM
         # Run encoder on history

@@ -85,13 +85,13 @@ if __name__ == "__main__":
 
         trainer.plot_learning_curves()
         interpret_batch = next(iter(val_loader))
-        visualize_tft_rolling_week(
-            model,
-            val_dataset,
-            home_ids[split_idx],
-            feature_names=STATIC_FEATURES,
-            device=DEVICE,
-        )
+        # visualize_tft_rolling_week(
+        #     model,
+        #     val_dataset,
+        #     home_ids[split_idx],
+        #     feature_names=STATIC_FEATURES,
+        #     device=DEVICE,
+        # )
         visualize_density_heatmap(
             model, val_dataset, home_ids[split_idx], device=DEVICE
         )
@@ -104,13 +104,13 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(model_path, map_location="cuda"))
         model.to("cuda")
         interpret_batch = next(iter(val_loader))
-        visualize_tft_rolling_week(
-            model,
-            val_dataset,
-            home_ids[split_idx],
-            feature_names=STATIC_FEATURES,
-            device=DEVICE,
-        )
+        # visualize_tft_rolling_week(
+        #     model,
+        #     val_dataset,
+        #     home_ids[split_idx],
+        #     feature_names=STATIC_FEATURES,
+        #     device=DEVICE,
+        # )
         visualize_density_heatmap(
             model, val_dataset, home_ids[split_idx], device=DEVICE
         )
@@ -149,14 +149,14 @@ if __name__ == "__main__":
 
         trainer.plot_learning_curves()
         interpret_batch = next(iter(val_loader))
-        visualize_tft_rolling_week(
-            model,
-            val_dataset,
-            home_ids[split_idx],
-            feature_names=STATIC_FEATURES,
-            device=DEVICE,
-            smoke_test=True,
-        )
+        # visualize_tft_rolling_week(
+        #     model,
+        #     val_dataset,
+        #     home_ids[split_idx],
+        #     feature_names=STATIC_FEATURES,
+        #     device=DEVICE,
+        #     smoke_test=True,
+        # )
         visualize_density_heatmap(
             model, val_dataset, home_ids[split_idx], device=DEVICE, smoke_test=True
         )

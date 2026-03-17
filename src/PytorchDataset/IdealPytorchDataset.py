@@ -37,7 +37,9 @@ class IdealPytorchDataset(Dataset):
             [sample["dynamic"]["value"] for sample in self.samples]
         )
 
-        self.temperature_stats = calculate_global_stats([sample["dynamic"]["temperature"] for sample in self.samples])
+        self.weather_stats = calculate_global_stats(
+            [sample["dynamic"]["temperature"] for sample in self.samples]
+        )
 
     def __len__(self):
         return len(self.samples)
@@ -85,14 +87,18 @@ class IdealPytorchDataset(Dataset):
             input_seq["value"] - self.power_stats["mean"]
         ) / self.power_stats["std"]
         input_seq.loc[:, "temperature"] = (
-            input_seq["temperature"] - self.weather_stats["temperature"]
+            input_seq["temperature"] - self.weather_stats["mean"]
         ) / self.weather_stats["std"]
 
         x_past_power = torch.from_numpy(input_seq["value"].values).float().unsqueeze(-1)
-        x_past_temperature = torch.from_numpy(input_seq["temperature"].values).float().unsqueeze(-1)
-        x_past_weather_conditions = torch.from_numpy(input_seq["conditions"].values).long().unsqueeze(-1)
+        x_past_temperature = (
+            torch.from_numpy(input_seq["temperature"].values).float().unsqueeze(-1)
+        )
+        x_past_weather_conditions = torch.from_numpy(
+            input_seq["conditions"].values
+        ).long()
         x_past_time = torch.from_numpy(input_seq[["hour", "dayofweek"]].values).long()
-        
+
         # future seq
         future_seq = full_dyn[
             start_idx
@@ -103,14 +109,18 @@ class IdealPytorchDataset(Dataset):
         future_seq.loc[:, "value"] = (
             future_seq["value"] - self.power_stats["mean"]
         ) / self.power_stats["std"]
-        future_seq.log[:, "tempearture"] = {
-            future_seq["tempearture"] - self.weather_stats["mean"]
-        } / self.weather_stats["mean"]
+        future_seq.loc[:, "temperature"] = (
+            future_seq["temperature"] - self.weather_stats["mean"]
+        ) / self.weather_stats["std"]
         x_future_time = torch.from_numpy(
             future_seq[["hour", "dayofweek"]].values
         ).long()
-        x_future_temperature = torch.from_numpy(future_seq["temperature"].values).float().unsqueeze(-1)
-        x_future_weather_conditions = torch.from_numpy(future_seq["conditions"].values).long()
+        x_future_temperature = (
+            torch.from_numpy(future_seq["temperature"].values).float().unsqueeze(-1)
+        )
+        x_future_weather_conditions = torch.from_numpy(
+            future_seq["conditions"].values
+        ).long()
 
         # 3. Target Sequence (The actual power for those future 240 mins)
         y_seq = torch.from_numpy(future_seq["value"].values).float()
@@ -136,11 +146,11 @@ class IdealPytorchDataset(Dataset):
             "x_past_power": x_past_power,
             "x_past_time": x_past_time,
             "x_past_temperature": x_past_temperature,
-            "x_past_conditions": x_past_weather_conditions,
+            "x_past_weather_conditions": x_past_weather_conditions,
             "x_static": static_tensor,
             "x_future_time": x_future_time,
             "x_future_temperature": x_future_temperature,
-            "x_future_conditions": x_future_weather_conditions,
+            "x_future_weather_conditions": x_future_weather_conditions,
             "y": y_seq,
         }
 
@@ -160,13 +170,19 @@ class IdealPytorchDataset(Dataset):
 
         # Standardize
         power = target_sample["dynamic"]
-        power["value"] = (power["value"] - self.power_stats["mean"]) / self.power_stats["std"]
-        power["temperature"] = (power["temperature"] - self.temperature_stats["mean"]) / self.temperature_stats["std"]
+        power["value"] = (power["value"] - self.power_stats["mean"]) / self.power_stats[
+            "std"
+        ]
+        power["temperature"] = (
+            power["temperature"] - self.weather_stats["mean"]
+        ) / self.weather_stats["std"]
 
         # Convert the full numpy array to a tensor of shape [Total_Mins, 1]
         full_power_tensor = torch.tensor(power["value"].values).float().unsqueeze(-1)
         full_time_tensor = torch.tensor(power[["hour", "dayofweek"]].values).long()
-        full_temperature_tensor = torch.tensor(power["temperature"].values).float().unsqueeze(-1)
+        full_temperature_tensor = (
+            torch.tensor(power["temperature"].values).float().unsqueeze(-1)
+        )
         full_weather_condition_tensor = torch.tensor(power["conditions"].values).long()
 
         static_data = target_sample["static"]
@@ -188,7 +204,13 @@ class IdealPytorchDataset(Dataset):
             dtype=torch.long,
         )
 
-        return full_power_tensor, full_time_tensor, full_temperature_tensor, full_weather_condition_tensor, static_features
+        return (
+            full_power_tensor,
+            full_time_tensor,
+            full_temperature_tensor,
+            full_weather_condition_tensor,
+            static_features,
+        )
 
     def denormalize(self, val):
         """Converts model output back to log-scale for plotting"""

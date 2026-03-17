@@ -110,7 +110,13 @@ def visualize_tft_rolling_week(
     if feature_names is None:
         feature_names = [f"Feature {i}" for i in range(11)]
 
-    full_power, full_time, static_feat = dataset.get_full_home_stream(home_id)
+    (
+        full_power,
+        full_time,
+        full_temperature_tensor,
+        full_weather_condition_tensor,
+        static_feat,
+    ) = dataset.get_full_home_stream(home_id)
 
     q10_list, q50_list, q90_list, actuals = [], [], [], []
     temporal_attn_list = []
@@ -230,7 +236,9 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     patch_size = 10  # 10-min steps (as per your snippet)
 
     # 1. Fetch Data (UPDATED to capture the split weather tensors)
-    full_power, full_time, full_weather_cont, full_weather_cat, static_feat = dataset.get_full_home_stream(home_id)
+    full_power, full_time, full_weather_cont, full_weather_cat, static_feat = (
+        dataset.get_full_home_stream(home_id)
+    )
 
     num_time_steps = plot_len // patch_size
     time_axis = np.arange(num_time_steps) * (patch_size / 60)  # Converted to Hours
@@ -238,9 +246,11 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     # Extract the true actuals for the plotting window to set Y-axis boundaries
     start_idx = history_mins
     end_idx = history_mins + plot_len
-    
+
     # Using your snippet's mean reduction for actuals
-    actuals = full_power[start_idx:end_idx, 0].numpy().reshape(-1, patch_size).mean(axis=1)
+    actuals = (
+        full_power[start_idx:end_idx, 0].numpy().reshape(-1, patch_size).mean(axis=1)
+    )
 
     if hasattr(dataset, "denormalize"):
         actuals = np.array([dataset.denormalize(val) for val in actuals])
@@ -263,40 +273,48 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
             # Prepare inputs (UPDATED with weather slicing)
             x_past_power = full_power[t - history_mins : t].unsqueeze(0).to(device)
             x_past_time = full_time[t - history_mins : t].unsqueeze(0).to(device)
-            
-            x_past_weather_cont = full_weather_cont[t - history_mins : t].unsqueeze(0).to(device)
-            x_past_weather_cat = full_weather_cat[t - history_mins : t].unsqueeze(0).to(device)
-            
+
+            x_past_weather_cont = (
+                full_weather_cont[t - history_mins : t].unsqueeze(0).to(device)
+            )
+            x_past_weather_cat = (
+                full_weather_cat[t - history_mins : t].unsqueeze(0).to(device)
+            )
+
             x_future_time = full_time[t : t + lead_mins].unsqueeze(0).to(device)
-            
-            x_future_weather_cont = full_weather_cont[t : t + lead_mins].unsqueeze(0).to(device)
-            x_future_weather_cat = full_weather_cat[t : t + lead_mins].unsqueeze(0).to(device)
-            
+
+            x_future_weather_cont = (
+                full_weather_cont[t : t + lead_mins].unsqueeze(0).to(device)
+            )
+            x_future_weather_cat = (
+                full_weather_cat[t : t + lead_mins].unsqueeze(0).to(device)
+            )
+
             s_feat = static_feat.unsqueeze(0).to(device)
 
             # Forward pass (UPDATED to include the 4 new weather tensors in order)
             if device == "cuda":
                 with torch.amp.autocast(device_type="cuda"):
                     quantiles, _, _ = model(
-                        x_past_power, 
-                        x_past_time, 
+                        x_past_power,
+                        x_past_time,
                         x_past_weather_cont,
                         x_past_weather_cat,
-                        x_future_time, 
+                        x_future_time,
                         x_future_weather_cont,
                         x_future_weather_cat,
-                        s_feat
+                        s_feat,
                     )
             else:
                 quantiles, _, _ = model(
-                    x_past_power, 
-                    x_past_time, 
+                    x_past_power,
+                    x_past_time,
                     x_past_weather_cont,
                     x_past_weather_cat,
-                    x_future_time, 
+                    x_future_time,
                     x_future_weather_cont,
                     x_future_weather_cat,
-                    s_feat
+                    s_feat,
                 )
 
             # quantiles shape: [1, future_patches, 3] -> (P10, P50, P90)
