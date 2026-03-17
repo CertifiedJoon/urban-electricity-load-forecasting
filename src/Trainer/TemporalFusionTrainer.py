@@ -52,10 +52,14 @@ class TemporalFusionTrainer:
         total_loss, batches = 0, 0
         self.optimizer.zero_grad()
         for i, batch in enumerate(self.train_loader):
-            x_past_power, x_past_time, x_future_time, x_stat, y = (
+            x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat, y = (
                 batch["x_past_power"].to(self.device),
                 batch["x_past_time"].to(self.device),
+                batch["x_past_temperature"].to(self.device),
+                batch["x_past_weather_conditions"].to(self.device),
                 batch["x_future_time"].to(self.device),
+                batch["x_future_temperature"].to(self.device),
+                batch["x_future_weather_conditions"].to(self.device),
                 batch["x_static"].to(self.device),
                 batch["y"].to(self.device),
             )
@@ -63,11 +67,13 @@ class TemporalFusionTrainer:
             if self.device == "cuda":
                 with autocast(self.device):
                     quantiles = self.model(
-                        x_past_power, x_past_time, x_future_time, x_stat
+                        x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat
                     )
                     loss = quantile_loss(quantiles, y) / accum_step
             else:
-                quantiles = self.model(x_past_power, x_past_time, x_future_time, x_stat)
+                quantiles = self.model(
+                    x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat
+                )
                 loss = quantile_loss(quantiles, y)
 
             self.scaler.scale(loss).backward()
@@ -91,15 +97,19 @@ class TemporalFusionTrainer:
         total_loss, batches = 0, 0
         with torch.no_grad():
             for i, batch in enumerate(self.val_loader):
-                x_past_power, x_past_time, x_future_time, x_stat, y = (
+                x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat, y = (
                     batch["x_past_power"].to(self.device),
                     batch["x_past_time"].to(self.device),
+                    batch["x_past_temperature"].to(self.device),
+                    batch["x_past_weather_conditions"].to(self.device),
                     batch["x_future_time"].to(self.device),
+                    batch["x_future_temperature"].to(self.device),
+                    batch["x_future_weather_conditions"].to(self.device),
                     batch["x_static"].to(self.device),
                     batch["y"].to(self.device),
                 )
                 quantiles, _, _ = self.model(
-                    x_past_power, x_past_time, x_future_time, x_stat
+                    x_past_power, x_past_time, x_past_temperature, x_past_weather_conditions, x_future_time, x_future_temperature, x_future_weather_conditions, x_stat
                 )
                 loss = quantile_loss(quantiles, y) / accum_step
                 total_loss += loss.item()

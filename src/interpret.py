@@ -35,7 +35,7 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
 
             # 2. Store results
             predictions.append(dataset.denormalize(mu.item()))
-            uncertainties.append(sigma.item() * dataset.stats["std"])
+            uncertainties.append(sigma.item() * dataset.power_stats["std"])
 
             # ACTUAL: We compare the prediction made at 't' with the reality at 't + 240'
             actuals_at_target.append(
@@ -227,10 +227,10 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     plot_len = 10080  # 1 week
     if smoke_test:
         plot_len = 300  # smoketest
-    patch_size = 10  # 30-min steps
+    patch_size = 10  # 10-min steps (as per your snippet)
 
-    # 1. Fetch Data
-    full_power, full_time, static_feat = dataset.get_full_home_stream(home_id)
+    # 1. Fetch Data (UPDATED to capture the split weather tensors)
+    full_power, full_time, full_weather_cont, full_weather_cat, static_feat = dataset.get_full_home_stream(home_id)
 
     num_time_steps = plot_len // patch_size
     time_axis = np.arange(num_time_steps) * (patch_size / 60)  # Converted to Hours
@@ -238,7 +238,9 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     # Extract the true actuals for the plotting window to set Y-axis boundaries
     start_idx = history_mins
     end_idx = history_mins + plot_len
-    actuals = full_power[start_idx:end_idx, 0].numpy().reshape(-1, 10).mean(axis=1)
+    
+    # Using your snippet's mean reduction for actuals
+    actuals = full_power[start_idx:end_idx, 0].numpy().reshape(-1, patch_size).mean(axis=1)
 
     if hasattr(dataset, "denormalize"):
         actuals = np.array([dataset.denormalize(val) for val in actuals])
@@ -258,27 +260,49 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
         for step_idx in range(num_time_steps):
             t = history_mins + step_idx * patch_size
 
-            # Prepare inputs
+            # Prepare inputs (UPDATED with weather slicing)
             x_past_power = full_power[t - history_mins : t].unsqueeze(0).to(device)
             x_past_time = full_time[t - history_mins : t].unsqueeze(0).to(device)
+            
+            x_past_weather_cont = full_weather_cont[t - history_mins : t].unsqueeze(0).to(device)
+            x_past_weather_cat = full_weather_cat[t - history_mins : t].unsqueeze(0).to(device)
+            
             x_future_time = full_time[t : t + lead_mins].unsqueeze(0).to(device)
+            
+            x_future_weather_cont = full_weather_cont[t : t + lead_mins].unsqueeze(0).to(device)
+            x_future_weather_cat = full_weather_cat[t : t + lead_mins].unsqueeze(0).to(device)
+            
             s_feat = static_feat.unsqueeze(0).to(device)
 
-            # Forward pass (Handling the 3-item eval tuple return)
+            # Forward pass (UPDATED to include the 4 new weather tensors in order)
             if device == "cuda":
                 with torch.amp.autocast(device_type="cuda"):
                     quantiles, _, _ = model(
-                        x_past_power, x_past_time, x_future_time, s_feat
+                        x_past_power, 
+                        x_past_time, 
+                        x_past_weather_cont,
+                        x_past_weather_cat,
+                        x_future_time, 
+                        x_future_weather_cont,
+                        x_future_weather_cat,
+                        s_feat
                     )
             else:
                 quantiles, _, _ = model(
-                    x_past_power, x_past_time, x_future_time, s_feat
+                    x_past_power, 
+                    x_past_time, 
+                    x_past_weather_cont,
+                    x_past_weather_cat,
+                    x_future_time, 
+                    x_future_weather_cont,
+                    x_future_weather_cat,
+                    s_feat
                 )
 
-            # quantiles shape: [1, 8, 3] -> (P10, P50, P90)
+            # quantiles shape: [1, future_patches, 3] -> (P10, P50, P90)
             q_vals = quantiles[0].cpu().numpy()
 
-            # 3. Project density onto the matrix for all 8 future steps
+            # 3. Project density onto the matrix
             for i in range(lead_mins // patch_size):
                 target_step_idx = (
                     step_idx + i + 1
@@ -292,7 +316,6 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
                         q10, q50, q90 = map(dataset.denormalize, [q10, q50, q90])
 
                     # Estimate Gaussian standard deviation from the P10-P90 spread.
-                    # P10 to P90 covers ~2.56 standard deviations in a normal distribution
                     sigma = max((q90 - q10) / 2.56, 1e-3)
 
                     # Calculate Gaussian probability density over the entire Y-axis grid
@@ -304,13 +327,10 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     # --- PLOTTING ---
     fig, ax = plt.subplots(figsize=(16, 6))
 
-    # A dark colormap (inferno or magma) looks incredible for density plots
     cmap = plt.cm.inferno
 
-    # Plot the heatmap
     im = ax.pcolormesh(time_axis, power_y, density_matrix, shading="auto", cmap=cmap)
 
-    # Overlay the actual ground truth as a high-contrast line (cyan looks great on inferno)
     ax.plot(
         time_axis, actuals, color="cyan", linewidth=1.5, label="Actual Power", alpha=0.9
     )
@@ -320,7 +340,6 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     ax.set_ylabel("Power Usage")
     ax.legend(loc="upper left")
 
-    # Add colorbar for density magnitude
     fig.colorbar(im, ax=ax, label="Cumulative Forecast Consensus")
 
     plt.tight_layout()

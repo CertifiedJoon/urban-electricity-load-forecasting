@@ -42,7 +42,33 @@ class LoadProcessor(IdealDataProcessor):
 
 
 class WeatherProcessor(IdealDataProcessor):
-    def process(self, feed_id: str) -> pd.DataFrame:
-        # Weather data comes in 15-minute intervals [cite: 139]
-        df = self.load_csv(f"weather_{feed_id}.csv")
-        return self._resample_and_clean(df)
+    def __init__(self, data_path):
+        super().__init__(data_path)
+        # Initialize weather data
+        weather_df = pd.read_csv(os.path.join(self.data_path, "combined_weather.csv"))
+        weather_df['time'] = pd.to_datetime(df['time'])
+        weather_df = weather_df[['time', 'locationid', 'temperature', 'conditions']]
+        weather_df['conditions'] = pd.factorize(weather_df['conditions'])[0]
+        self.weather_df_by_location_id = dict()
+
+        for location, group in weather_df.group_by('location_id'):
+            group = group.set_index("time").sort_index()
+            resampled_group = group[['temperature']].resample('1min').ffill()
+            self.weather_df_by_location_id[location] = resampled_group
+        
+        # Initialize home metadata (home metadata is used to join weather and power usage data)
+        home_meta_df = pd.read_csv(os.path.join(self.data_path, "home.csv"))
+        self.home_meta_df = home_meta_df[['homeid', 'location']].set_index('home_id')
+        
+
+    def process(self, home_id, freq='1min') -> pd.DataFrame:
+        location = self.home_meta_df.loc[home_id, 'location']
+        if location in self.weather_df_by_location_id:
+            return self.weather_df_by_location_id[location]
+        raise ValueError(f"Location for given home_id - {str(home_id)} - not found in weather data")
+
+        
+
+
+
+        
