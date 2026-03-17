@@ -1,2 +1,3 @@
-/data/**
+/data/household_sensors/
+/data/metadata_and_surveys/
 **/__pycache__
