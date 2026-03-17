@@ -54,7 +54,7 @@ class WeatherProcessor(IdealDataProcessor):
         for location, group in weather_df.groupby("locationid"):
             group = group.set_index("time").sort_index()
             resampled_group = (
-                group[["temperature", "conditions"]].resample("1min").ffill()
+                group[["temperature", "conditions"]].resample("1min").ffill().bfill()
             )
             self.weather_df_by_location_id[location] = resampled_group
 
