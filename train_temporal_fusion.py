@@ -44,27 +44,17 @@ if __name__ == "__main__":
         )
     ]
 
-    random.seed(42)  # For reproducibility
-    random.shuffle(home_ids)
-
-    # 80/20 Split
-    train_idx = int(len(home_ids) * 0.8)
-    test_idx = int(len(home_ids) * 0.9)
-    train_ids = home_ids[:train_idx]
-    val_ids = home_ids[train_idx:test_idx]
-    test_ids = home_ids[test_idx:]
-
     # choose mode
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
     choice = int(input())
-    train_dataset = IdealPytorchDataset(train_ids, orchestrator)
+    train_dataset = IdealPytorchDataset(home_ids, orchestrator)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     pwr_stat = train_dataset.power_stats
     wth_stat = train_dataset.weather_stats
 
     if choice == 1:
         val_dataset = IdealPytorchDataset(
-            val_ids,
+            home_ids,
             orchestrator,
             split="val",
             power_stats=pwr_stat,
@@ -73,7 +63,7 @@ if __name__ == "__main__":
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         test_dataset = IdealPytorchDataset(
-            test_ids,
+            home_ids,
             orchestrator,
             split="test",
             power_stats=pwr_stat,
@@ -113,11 +103,11 @@ if __name__ == "__main__":
         #     feature_names=STATIC_FEATURES,
         #     device=DEVICE,
         # )
-        for test_id in test_ids:
+        for test_id in home_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     elif choice == 2:
         test_dataset = IdealPytorchDataset(
-            test_ids,
+            home_ids,
             orchestrator,
             split="test",
             power_stats=pwr_stat,
@@ -135,7 +125,7 @@ if __name__ == "__main__":
         #     feature_names=STATIC_FEATURES,
         #     device=DEVICE,
         # )
-        for test_id in test_ids:
+        for test_id in home_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     elif choice == 3:
         print("RUNNING IN SMOKE TEST MODE (CPU)")
@@ -145,7 +135,7 @@ if __name__ == "__main__":
         MAX_BATCHES_PER_EPOCH = 5
 
         val_dataset = IdealPytorchDataset(
-            val_ids,
+            home_ids,
             orchestrator,
             split="val",
             power_stats=pwr_stat,
@@ -154,7 +144,7 @@ if __name__ == "__main__":
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         test_dataset = IdealPytorchDataset(
-            test_ids,
+            home_ids,
             orchestrator,
             split="test",
             power_stats=pwr_stat,
@@ -195,7 +185,7 @@ if __name__ == "__main__":
         #     device=DEVICE,
         #     smoke_test=True,
         # )
-        for test_id in test_ids:
+        for test_id in home_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     else:
         print("No data loaded. Check DATA_DIR path.")
