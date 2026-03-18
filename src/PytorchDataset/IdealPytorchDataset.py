@@ -5,84 +5,140 @@ import pandas as pd
 
 
 class IdealPytorchDataset(Dataset):
-    def __init__(self, home_ids, orchestrator, window_size=43200, prediction_shift=240):
-        # We need window_size + 1 to create the shift
+    def __init__(
+        self,
+        home_ids,
+        orchestrator,
+        split="train",
+        window_size=43200,
+        prediction_shift=240,
+        train_pct=0.70,
+        val_pct=0.10,
+        power_stats=None,
+        weather_stats=None,
+    ):
+        self.split = split
         self.window_size = window_size
-        self.samples = []
         self.prediction_shift = prediction_shift
+        self.samples = []
 
-        print(f"Scanning directory for {len(home_ids)} homes...")
+        # Deadzone equals history + lead time to prevent future leakage
+        deadzone = pd.Timedelta(minutes=(window_size + prediction_shift))
+
+        print(f"Loading '{split}' split for {len(home_ids)} homes...")
+
         for h_id in home_ids:
-            static, dynamic = orchestrator.get_home_data(h_id)
+            # Orchestrator now simply joins and returns the FULL timeline for the home
+            static_data, full_dynamic_df = orchestrator.get_home_data(h_id)
 
-            # Debugging: Show why a home might be skipped
-            if dynamic is None:
-                print(f"Home {h_id}: Skipped (No Data Found)")  # Uncomment if too noisy
+            if full_dynamic_df is None or full_dynamic_df.empty:
                 continue
-            if len(dynamic) <= (self.window_size + self.prediction_shift):
-                print(
-                    f"Home {h_id}: Skipped (Data too short: {len(dynamic)} vs {self.window_size + self.prediction_shift})"
-                )
+
+            start_time = full_dynamic_df.index.min()
+            end_time = full_dynamic_df.index.max()
+            total_duration = end_time - start_time
+
+            # Skip if the home didn't survive long enough to have distinct splits separated by deadzones
+            if total_duration < (deadzone * 3):
                 continue
-            # Ensure we have enough data for Input + 1 Target
-            if dynamic is not None and len(dynamic) > (
-                self.window_size + self.prediction_shift
-            ):
-                self.samples.append(
-                    {"static": static, "dynamic": dynamic, "homeid": h_id}
+
+            # --- 1. CALCULATE ROLLING CUTOFFS PER HOME ---
+            train_end_time = start_time + (total_duration * train_pct)
+            val_start_time = train_end_time + deadzone
+            val_end_time = start_time + (total_duration * (train_pct + val_pct))
+            test_start_time = val_end_time + deadzone
+
+            # --- 2. SLICE DATASET ---
+            if split == "train":
+                split_df = full_dynamic_df[
+                    full_dynamic_df.index < train_end_time
+                ].copy()
+            elif split == "val":
+                split_df = full_dynamic_df[
+                    (full_dynamic_df.index >= val_start_time)
+                    & (full_dynamic_df.index < val_end_time)
+                ].copy()
+            elif split == "test":
+                split_df = full_dynamic_df[
+                    full_dynamic_df.index >= test_start_time
+                ].copy()
+            else:
+                raise ValueError(f"Invalid split: {split}")
+
+            # Skip if the sliced chunk is too small to pull even one full window from
+            if len(split_df) <= (self.window_size + self.prediction_shift):
+                continue
+
+            # Reset index for positional integer slicing in __getitem__
+            split_df = split_df.reset_index(drop=True)
+
+            self.samples.append(
+                {"static": static_data, "dynamic": split_df, "homeid": h_id}
+            )
+
+        print(f"Loaded {len(self.samples)} valid homes for '{split}'.")
+
+        # --- 3. ISOLATE STATS TO PREVENT LEAKAGE ---
+        if split == "train":
+            # Calculate global mean/std ONLY on the training distribution
+            all_power = pd.concat([s["dynamic"]["value"] for s in self.samples])
+            all_temps = pd.concat([s["dynamic"]["temperature"] for s in self.samples])
+
+            self.power_stats = {"mean": all_power.mean(), "std": all_power.std()}
+            self.weather_stats = {"mean": all_temps.mean(), "std": all_temps.std()}
+        else:
+            # Val and Test MUST use the Train stats passed into the constructor
+            if power_stats is None or weather_stats is None:
+                raise ValueError(
+                    f"You must provide 'train' stats when building the '{split}' dataset!"
                 )
-        print(f"Loaded {len(self.samples)} valid homes.")
-
-        self.power_stats = calculate_global_stats(
-            [sample["dynamic"]["value"] for sample in self.samples]
-        )
-
-        self.weather_stats = calculate_global_stats(
-            [sample["dynamic"]["temperature"] for sample in self.samples]
-        )
+            self.power_stats = power_stats
+            self.weather_stats = weather_stats
 
     def __len__(self):
         return len(self.samples)
 
+    def denormalize(self, z_score):
+        """Helper to convert standardized predictions back to kW for evaluation"""
+        return (z_score * self.power_stats["std"]) + self.power_stats["mean"]
+
     def __getitem__(self, idx):
         sample = self.samples[idx]
-        full_dyn = sample["dynamic"].copy()
+        full_dyn = sample["dynamic"]
         static_data = sample["static"]
 
         max_start = len(full_dyn) - self.window_size - self.prediction_shift
 
-        # 1. Pre-calculate where the spikes are (e.g., above the 85th percentile)
-        # This gives us a list of valid starting indices that guarantee a spike in the target
-        spike_threshold = full_dyn["value"].quantile(0.85)
-
-        # Find all indices where power is high
-        high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
-
-        # Shift those indices backwards by (lead_mins) so the spike falls exactly inside the target window
-        valid_spike_starts = (
-            high_power_idx
-            - self.window_size
-            - int(self.prediction_shift * np.random.rand())
-        )
-
-        # Filter out negative starting indices or ones too close to the end
-        spike_start_pool = valid_spike_starts[
-            (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
-        ]
-
         if max_start <= 0:
             start_idx = 0
         else:
-            # sample "spikey" sets with 50% chance.
-            if np.random.rand() < 0.5 and len(spike_start_pool):
-                start_idx = np.random.choice(spike_start_pool)
-            # random slice
+            # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
+            if self.split == "train":
+                spike_threshold = full_dyn["value"].quantile(0.85)
+                high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
+
+                valid_spike_starts = (
+                    high_power_idx
+                    - self.window_size
+                    - int(self.prediction_shift * np.random.rand())
+                )
+
+                spike_start_pool = valid_spike_starts[
+                    (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
+                ]
+
+                # 50/50 Chance to force a spike into the training batch
+                if np.random.rand() < 0.5 and len(spike_start_pool) > 0:
+                    start_idx = np.random.choice(spike_start_pool)
+                else:
+                    start_idx = np.random.randint(0, max_start)
             else:
+                # Validation and Test MUST use random sampling for honest evaluation
                 start_idx = np.random.randint(0, max_start)
 
-        # Grab window + shift extra step
-        input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size]
-        # past seq
+        # --- 5. EXTRACT & STANDARDIZE SEQUENCES ---
+        input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size].copy()
+
         input_seq.loc[:, "value"] = (
             input_seq["value"] - self.power_stats["mean"]
         ) / self.power_stats["std"]
@@ -99,19 +155,20 @@ class IdealPytorchDataset(Dataset):
         ).long()
         x_past_time = torch.from_numpy(input_seq[["hour", "dayofweek"]].values).long()
 
-        # future seq
-        future_seq = full_dyn[
+        future_seq = full_dyn.iloc[
             start_idx
             + self.window_size : start_idx
             + self.window_size
             + self.prediction_shift
-        ]
+        ].copy()
+
         future_seq.loc[:, "value"] = (
             future_seq["value"] - self.power_stats["mean"]
         ) / self.power_stats["std"]
         future_seq.loc[:, "temperature"] = (
             future_seq["temperature"] - self.weather_stats["mean"]
         ) / self.weather_stats["std"]
+
         x_future_time = torch.from_numpy(
             future_seq[["hour", "dayofweek"]].values
         ).long()
@@ -122,7 +179,6 @@ class IdealPytorchDataset(Dataset):
             future_seq["conditions"].values
         ).long()
 
-        # 3. Target Sequence (The actual power for those future 240 mins)
         y_seq = torch.from_numpy(future_seq["value"].values).float()
 
         static_tensor = torch.tensor(
@@ -217,9 +273,3 @@ class IdealPytorchDataset(Dataset):
         if self.power_stats:
             return (val * self.power_stats["std"]) + self.power_stats["mean"]
         return val
-
-
-def calculate_global_stats(samples_list):
-    # Combine all power data into one array to find the true population mean/std
-    all_power = np.concatenate(samples_list)
-    return {"mean": np.mean(all_power), "std": np.std(all_power)}
