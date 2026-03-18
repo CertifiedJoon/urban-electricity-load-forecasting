@@ -1,0 +1,39 @@
+nohup: ignoring input
+1. Train + Interpret
+2. Interpret
+3. Smoke Test
+Type 1 or 2 or 3:
+Scanning directory for 51 homes...
+Loaded 51 valid homes.
+Scanning directory for 203 homes...
+nohup: ignoring input
+1. Train + Interpret
+2. Interpret
+3. Smoke Test
+Type 1 or 2 or 3:
+Scanning directory for 51 homes...
+Loaded 51 valid homes.
+Scanning directory for 203 homes...
+Loaded 203 valid homes.
+/userhome/cs/u3566665/urban-electricity-load-forecasting/src/PytorchDataset/IdealPytorchDataset.py:93: UserWarning: The given NumPy array is not writable, and PyTorch does not support non-writable tensors. This means writing to this tensor will result in undefined behavior. You may want to copy the array to protect its data or make it writable before converting it to a tensor. This type of warning will be suppressed for the rest of this program. (Triggered internally at /pytorch/torch/csrc/utils/tensor_numpy.cpp:213.)
+  x_past_power = torch.from_numpy(input_seq["value"].values).float().unsqueeze(-1)
+Epoch 0 | Train Loss: 0.0316 | Val Loss: 0.0285 | LR: 1e-06
+Validation loss decreased (inf --> 0.028517).  Saving model ...
+Epoch 1 | Train Loss: 0.0241 | Val Loss: 0.0205 | LR: 1e-06
+Validation loss decreased (0.028517 --> 0.020533).  Saving model ...
+Epoch 2 | Train Loss: 0.0256 | Val Loss: 0.0260 | LR: 1e-06
+EarlyStopping counter: 1 out of 200
+Epoch 3 | Train Loss: 0.0276 | Val Loss: 0.0256 | LR: 1e-06
+EarlyStopping counter: 2 out of 200
+Epoch 4 | Train Loss: 0.0284 | Val Loss: 0.0267 | LR: 1e-06
+EarlyStopping counter: 3 out of 200
+Epoch 5 | Train Loss: 0.0282 | Val Loss: 0.0336 | LR: 1e-06
+EarlyStopping counter: 4 out of 200
+Epoch 6 | Train Loss: 0.0268 | Val Loss: 0.0254 | LR: 1e-06
+EarlyStopping counter: 5 out of 200
+Epoch 7 | Train Loss: 0.0288 | Val Loss: 0.0276 | LR: 1e-06
+EarlyStopping counter: 6 out of 200
+Epoch 8 | Train Loss: 0.0293 | Val Loss: 0.0236 | LR: 1e-06
+EarlyStopping counter: 7 out of 200
+Epoch 9 | Train Loss: 0.0283 | Val Loss: 0.0251 | LR: 1e-06
+EarlyStopping counter: 8 out of 200

@@ -1,3 +1,6 @@
 /data/household_sensors/
 /data/metadata_and_surveys/
+/data/*.zip
+/data/auxiliarydata/
+/data/*.csv
 **/__pycache__

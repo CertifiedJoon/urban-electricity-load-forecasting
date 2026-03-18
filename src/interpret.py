@@ -361,4 +361,4 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     fig.colorbar(im, ax=ax, label="Cumulative Forecast Consensus")
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(f"interpretation_home{str(home_id)}.png")

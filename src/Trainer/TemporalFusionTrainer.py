@@ -127,6 +127,6 @@ class TemporalFusionTrainer:
         plt.xlabel("Epoch")
         plt.legend()
         plt.grid(color="grey", linestyle="-", linewidth=0.5)
-        plt.ylim(0, 5)
+        plt.ylim(0, 0.1)
         plt.ylabel("NLL Loss")
         plt.savefig("LearningCurve.png")
