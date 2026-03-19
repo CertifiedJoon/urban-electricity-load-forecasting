@@ -19,6 +19,7 @@ if __name__ == "__main__":
     EPOCHS = 5000
     LR = 1e-6
     STATIC_FEATURES = [
+        "homeid",
         "residents",
         "income_band",
         "hometype",
@@ -34,7 +35,7 @@ if __name__ == "__main__":
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=320, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=640, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -75,7 +76,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=160
+            optimizer, mode="min", factor=0.1, patience=320
         )
 
         trainer = TemporalFusionTrainer(
