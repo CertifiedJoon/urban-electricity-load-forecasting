@@ -252,7 +252,6 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     end_idx = history_mins + plot_len
 
     # Using your snippet's mean reduction for actuals
-    print(len(full_power[start_idx:, 0].numpy()))
     if plot_len > len(full_power[start_idx:, 0].numpy()):
         return
 
