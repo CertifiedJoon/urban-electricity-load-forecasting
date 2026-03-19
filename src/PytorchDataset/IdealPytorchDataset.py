@@ -153,7 +153,9 @@ class IdealPytorchDataset(Dataset):
         x_past_weather_conditions = torch.from_numpy(
             input_seq["conditions"].values
         ).long()
-        x_past_time = torch.from_numpy(input_seq[["hour", "dayofweek"]].values).long()
+        x_past_time = torch.from_numpy(
+            input_seq[["hour", "dayofweek", "month"]].values
+        ).long()
 
         future_seq = full_dyn.iloc[
             start_idx
@@ -170,7 +172,7 @@ class IdealPytorchDataset(Dataset):
         ) / self.weather_stats["std"]
 
         x_future_time = torch.from_numpy(
-            future_seq[["hour", "dayofweek"]].values
+            future_seq[["hour", "dayofweek", "month"]].values
         ).long()
         x_future_temperature = (
             torch.from_numpy(future_seq["temperature"].values).float().unsqueeze(-1)
@@ -183,6 +185,7 @@ class IdealPytorchDataset(Dataset):
 
         static_tensor = torch.tensor(
             [
+                static_data["homeid"],
                 static_data["residents"],
                 static_data["income_band"],
                 static_data["hometype"],
@@ -235,7 +238,9 @@ class IdealPytorchDataset(Dataset):
 
         # Convert the full numpy array to a tensor of shape [Total_Mins, 1]
         full_power_tensor = torch.tensor(power["value"].values).float().unsqueeze(-1)
-        full_time_tensor = torch.tensor(power[["hour", "dayofweek"]].values).long()
+        full_time_tensor = torch.tensor(
+            power[["hour", "dayofweek", "month"]].values
+        ).long()
         full_temperature_tensor = (
             torch.tensor(power["temperature"].values).float().unsqueeze(-1)
         )
@@ -245,6 +250,7 @@ class IdealPytorchDataset(Dataset):
         # Get the static socio-economic features
         static_features = torch.tensor(
             [
+                static_data["homeid"],
                 static_data["residents"],
                 static_data["income_band"],
                 static_data["hometype"],

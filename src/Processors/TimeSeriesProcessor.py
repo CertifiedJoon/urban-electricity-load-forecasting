@@ -37,6 +37,7 @@ class LoadProcessor(IdealDataProcessor):
         df["value"] = np.log1p(df["value"])
         df["hour"] = df["timestamp"].dt.hour
         df["dayofweek"] = df["timestamp"].dt.weekday
+        df["month"] = df["timestamp"].dt.month
         df.set_index("timestamp", inplace=True)
         return df
 

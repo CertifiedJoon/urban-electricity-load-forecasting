@@ -129,6 +129,7 @@ class TemporalFusionTransformer(nn.Module):
         # Time embeddings (Hour: 24, DayOfWeek: 7)
         self.hour_embed = nn.Embedding(24, d_model)
         self.day_embed = nn.Embedding(7, d_model)
+        self.month_embed = nn.Embedding(12, d_model)
 
         # tempearture projection
         self.temperature_proj = nn.Linear(1, d_model)
@@ -147,11 +148,11 @@ class TemporalFusionTransformer(nn.Module):
         # --- 2. Variable Selection Networks (VSNs) ---
         self.static_vsn = VariableSelectionNetwork(len(cardinalities), d_model)
         self.past_vsn = VariableSelectionNetwork(
-            5, d_model
-        )  # power, hour, day, temperature, weather conditions
+            6, d_model
+        )  # power, hour, day, month, temperature, weather conditions
         self.future_vsn = VariableSelectionNetwork(
-            4, d_model
-        )  # hour, day, tempearture, weather conditions (known future)
+            5, d_model
+        )  # hour, day, month, tempearture, weather conditions (known future)
 
         # --- 3. Seq2Seq LSTM (Local Processing) ---
         self.encoder_lstm = nn.LSTM(d_model, d_model, batch_first=True)
@@ -205,6 +206,7 @@ class TemporalFusionTransformer(nn.Module):
         # Subsample time features to match patches (take the first minute of each patch)
         past_hour = self.hour_embed(x_past_time[:, :: self.patch_size, 0])
         past_day = self.day_embed(x_past_time[:, :: self.patch_size, 1])
+        past_month = self.month_embed(x_past_time[:, :: self.patch_size, 2])
         past_temperature = self.temperature_proj(
             x_past_temperature[:, :: self.patch_size, :]
         )
@@ -217,6 +219,7 @@ class TemporalFusionTransformer(nn.Module):
                     past_power_patched,
                     past_hour,
                     past_day,
+                    past_month,
                     past_temperature,
                     past_weather_conditions,
                 ],
@@ -227,6 +230,7 @@ class TemporalFusionTransformer(nn.Module):
         # C. Future VSN
         future_hour = self.hour_embed(x_future_time[:, :: self.patch_size, 0])
         future_day = self.day_embed(x_future_time[:, :: self.patch_size, 1])
+        future_month = self.month_embed(x_future_time[:, :: self.patch_size, 2])
         future_temperature = self.temperature_proj(
             x_future_temperature[:, :: self.patch_size, :]
         )
@@ -238,6 +242,7 @@ class TemporalFusionTransformer(nn.Module):
                 [
                     future_hour,
                     future_day,
+                    future_month,
                     future_temperature,
                     future_weather_conditions,
                 ],
