@@ -16,7 +16,7 @@ if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     accumulation_step = 16  # multiply to batchsize!
     BATCH_SIZE = 4
-    EPOCHS = 5000
+    EPOCHS = 500
     LR = 1e-6
     STATIC_FEATURES = [
         "homeid",
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=640, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=100, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.1, patience=320
+            optimizer, mode="min", factor=0.1, patience=50
         )
 
         trainer = TemporalFusionTrainer(
@@ -86,6 +86,7 @@ if __name__ == "__main__":
         for epoch in range(EPOCHS):
             train_loss = trainer.train_epoch(accumulation_step)
             val_loss = trainer.validate(accumulation_step)
+            train_dataset.update_loss_trend(train_loss)
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | LR: {optimizer.param_groups[0]['lr']}"
             )
@@ -141,6 +142,7 @@ if __name__ == "__main__":
             split="val",
             power_stats=pwr_stat,
             weather_stats=wth_stat,
+            train_pct=0.70,
         )
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -150,6 +152,7 @@ if __name__ == "__main__":
             split="test",
             power_stats=pwr_stat,
             weather_stats=wth_stat,
+            train_pct=0.70,
         )
 
         model = TemporalFusionTransformer(orchestrator.cardinalities, smoke_test=True)

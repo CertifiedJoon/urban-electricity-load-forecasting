@@ -129,7 +129,7 @@ class TemporalFusionTransformer(nn.Module):
         # Time embeddings (Hour: 24, DayOfWeek: 7)
         self.hour_embed = nn.Embedding(24, d_model)
         self.day_embed = nn.Embedding(7, d_model)
-        self.month_embed = nn.Embedding(12, d_model)
+        self.month_embed = nn.Embedding(13, d_model)
 
         # tempearture projection
         self.temperature_proj = nn.Linear(1, d_model)

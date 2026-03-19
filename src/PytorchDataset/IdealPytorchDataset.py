@@ -1,3 +1,5 @@
+from collections import deque
+
 import torch
 from torch.utils.data import Dataset
 import numpy as np
@@ -12,10 +14,11 @@ class IdealPytorchDataset(Dataset):
         split="train",
         window_size=43200,
         prediction_shift=240,
-        train_pct=0.70,
+        train_pct=0.80,
         val_pct=0.10,
         power_stats=None,
         weather_stats=None,
+        loss_momentum_length=10,
     ):
         self.split = split
         self.window_size = window_size
@@ -95,6 +98,10 @@ class IdealPytorchDataset(Dataset):
             self.power_stats = power_stats
             self.weather_stats = weather_stats
 
+        # track train loss
+        self.loss_trend = deque()
+        self.loss_momentum_length = loss_momentum_length
+
     def __len__(self):
         return len(self.samples)
 
@@ -114,7 +121,7 @@ class IdealPytorchDataset(Dataset):
         else:
             # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
             if self.split == "train":
-                spike_threshold = full_dyn["value"].quantile(0.85)
+                spike_threshold = full_dyn["value"].quantile(0.7)
                 high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
 
                 valid_spike_starts = (
@@ -126,9 +133,13 @@ class IdealPytorchDataset(Dataset):
                 spike_start_pool = valid_spike_starts[
                     (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
                 ]
+                max_loss_fall_pct = self._get_max_fall_pct()
 
                 # 50/50 Chance to force a spike into the training batch
-                if np.random.rand() < 0.5 and len(spike_start_pool) > 0:
+                if (
+                    np.random.rand() < (1 - max_loss_fall_pct)
+                    and len(spike_start_pool) > 0
+                ):
                     start_idx = np.random.choice(spike_start_pool)
                 else:
                     start_idx = np.random.randint(0, max_start)
@@ -223,7 +234,7 @@ class IdealPytorchDataset(Dataset):
             if str(s["homeid"]) == str(home_id):
                 target_sample = s
                 break
-
+        target_sample = None
         if target_sample is None:
             raise ValueError(f"Home ID {home_id} not found in dataset.")
 
@@ -279,3 +290,19 @@ class IdealPytorchDataset(Dataset):
         if self.power_stats:
             return (val * self.power_stats["std"]) + self.power_stats["mean"]
         return val
+
+    def update_loss_trend(self, loss):
+        if len(self.loss_trend) >= self.loss_momentum_length:
+            self.loss_trend.popleft()
+
+        self.loss_trend.append(loss)
+
+    def _get_max_fall_pct(self):
+        max_loss = 0
+        max_fall_pct = 0
+        for i, loss in enumerate(self.loss_trend):
+            if loss > max_loss:
+                max_loss = loss
+            elif max_fall_pct < (max_loss - loss) / max_loss:
+                max_fall_pct = max(0, (max_loss - loss) / max_loss)
+        return max_fall_pct

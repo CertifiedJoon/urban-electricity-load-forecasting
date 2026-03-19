@@ -236,9 +236,13 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     patch_size = 10  # 10-min steps (as per your snippet)
 
     # 1. Fetch Data (UPDATED to capture the split weather tensors)
-    full_power, full_time, full_weather_cont, full_weather_cat, static_feat = (
-        dataset.get_full_home_stream(home_id)
-    )
+    try:
+        full_power, full_time, full_weather_cont, full_weather_cat, static_feat = (
+            dataset.get_full_home_stream(home_id)
+        )
+    except ValueError:
+        print(f"home {str(home_id)} not found in dataset")
+        return
 
     num_time_steps = plot_len // patch_size
     time_axis = np.arange(num_time_steps) * (patch_size / 60)  # Converted to Hours
