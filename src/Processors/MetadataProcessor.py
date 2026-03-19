@@ -47,7 +47,6 @@ class MetadataProcessor(IdealDataProcessor):
         # 3. Factorize Categoricals for Embedding Layers
         # Filling N/A values before conversion
         for col in [
-            "homeid",
             "build_era",
             "gender",
             "gender",

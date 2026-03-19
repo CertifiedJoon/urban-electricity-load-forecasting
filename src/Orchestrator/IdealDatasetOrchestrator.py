@@ -19,5 +19,4 @@ class IdealDatasetOrchestrator:
         dynamic_df = self.load_proc.process(home_id)
         weather_df = self.weather_proc.process(home_id)
         dynamic_df = dynamic_df.join(weather_df, how="inner")
-
         return static_row.iloc[0], dynamic_df

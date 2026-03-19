@@ -230,7 +230,7 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     # Configuration
     history_mins = 43200  # 60 days
     lead_mins = 240  # 4 hours
-    plot_len = 10080  # 1 week
+    plot_len = 1600  
     if smoke_test:
         plot_len = 300  # smoketest
     patch_size = 10  # 10-min steps (as per your snippet)
@@ -252,6 +252,10 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     end_idx = history_mins + plot_len
 
     # Using your snippet's mean reduction for actuals
+    print(len(full_power[start_idx:,0].numpy()))
+    if plot_len > len(full_power[start_idx:,0].numpy()):
+        return
+    
     actuals = (
         full_power[start_idx:end_idx, 0].numpy().reshape(-1, patch_size).mean(axis=1)
     )

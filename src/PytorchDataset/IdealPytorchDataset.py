@@ -230,11 +230,13 @@ class IdealPytorchDataset(Dataset):
         Finds a specific home by its ID and returns the raw continuous data.
         """
         # Find the specific home in our sample list
+        target_sample = None
+        
         for s in self.samples:
-            if str(s["homeid"]) == str(home_id):
+            if s["homeid"] == int(home_id):
                 target_sample = s
                 break
-        target_sample = None
+            
         if target_sample is None:
             raise ValueError(f"Home ID {home_id} not found in dataset.")
 

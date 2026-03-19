@@ -48,6 +48,8 @@ if __name__ == "__main__":
     # choose mode
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
     choice = int(input())
+    # choice = 1
+    
     train_dataset = IdealPytorchDataset(home_ids, orchestrator)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     pwr_stat = train_dataset.power_stats
@@ -105,7 +107,8 @@ if __name__ == "__main__":
         #     feature_names=STATIC_FEATURES,
         #     device=DEVICE,
         # )
-        for test_id in home_ids:
+        test_ids = [sample['homeid'] for sample in test_dataset.samples]
+        for test_id in test_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     elif choice == 2:
         test_dataset = IdealPytorchDataset(
@@ -127,7 +130,8 @@ if __name__ == "__main__":
         #     feature_names=STATIC_FEATURES,
         #     device=DEVICE,
         # )
-        for test_id in home_ids:
+        test_ids = [sample['homeid'] for sample in test_dataset.samples]
+        for test_id in test_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     elif choice == 3:
         print("RUNNING IN SMOKE TEST MODE (CPU)")
@@ -189,7 +193,9 @@ if __name__ == "__main__":
         #     device=DEVICE,
         #     smoke_test=True,
         # )
-        for test_id in home_ids:
+        test_ids = [sample['homeid'] for sample in test_dataset.samples]
+
+        for test_id in test_ids:
             visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
     else:
         print("No data loaded. Check DATA_DIR path.")
