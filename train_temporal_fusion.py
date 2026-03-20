@@ -98,7 +98,7 @@ if __name__ == "__main__":
         for epoch in range(EPOCHS):
             train_loss = trainer.train_epoch(accumulation_step)
             val_loss = trainer.validate(accumulation_step)
-            train_dataset.update_loss_trend(train_loss)
+            train_dataset.update_loss_trend(val_loss)
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | LR: {optimizer.param_groups[0]['lr']}"
             )
