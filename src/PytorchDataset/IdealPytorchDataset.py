@@ -80,7 +80,7 @@ class IdealPytorchDataset(Dataset):
         else:
             # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
             if self.split == "train":
-                spike_threshold = full_dyn["value"].quantile(0.7)
+                spike_threshold = full_dyn["value"].quantile(0.85)
                 high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
 
                 valid_spike_starts = (

@@ -3,31 +3,87 @@ from torch.amp import GradScaler, autocast
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-def quantile_loss(predictions, targets, patch_size=10, quantiles=[0.1, 0.5, 0.9]):
-    """
-    predictions: [Batch, Future_Patches, 3]  (e.g., [B, 24, 3])
-    targets:     [Batch, Future_Mins]        (e.g., [B, 240])
-    """
-    B, _ = targets.shape
 
-    # 1. Patch the Target
-    # Reshape 240 mins into 24 patches of 10 mins, then take the mean of each patch
-    # Shape becomes: [Batch, 10]
-    targets_patched = targets.view(B, -1, patch_size).mean(dim=-1)
+class AsymmetricSpikeQuantileLoss(nn.Module):
+    def __init__(
+        self,
+        quantiles=[0.1, 0.5, 0.9],
+        z_threshold=1.5,
+        brave_multiplier=5.0,
+        patch_size=10,
+    ):
+        super().__init__()
+        self.quantiles = quantiles
+        # z_threshold is in standard deviations (e.g., 1.5 = top ~7% of data)
+        self.z_threshold = z_threshold
+        self.brave_multiplier = brave_multiplier
+        self.patch_size = patch_size
 
-    losses = []
-    for i, q in enumerate(quantiles):
-        # 2. Calculate error for the entire sequence at once
-        error = targets_patched - predictions[:, :, i]  # [Batch, 10]
+    def forward(self, preds, target):
+        # preds: [batch, seq_len, num_quantiles]
+        # target: [batch, seq_len]
+        device = preds.device
 
-        # 3. Asymmetric penalty
-        loss = torch.max((q - 1) * error, q * error)
-        losses.append(loss)
+        B, _ = target.shape
 
-    # Stack to [Batch, 8, 3], sum over quantiles, mean over sequence and batch
-    total_loss = torch.mean(torch.sum(torch.stack(losses, dim=-1), dim=-1))
-    return total_loss
+        targets_patched = target.view(B, -1, self.patch_size).mean(dim=-1)
+
+        # 1. Expand dimensions for broadcasting
+        q_tensor = torch.tensor(self.quantiles, device=device).view(1, 1, -1)
+        target_expanded = targets_patched.unsqueeze(-1)
+
+        # 2. Calculate raw errors
+        errors = target_expanded - preds
+
+        # 3. Standard Pinball Loss
+        standard_loss = torch.max(q_tensor * errors, (q_tensor - 1) * errors)
+
+        # --- THE FIX: ASYMMETRIC WEIGHTING ---
+
+        # Condition A: Is this a true spike? (Operating in Z-score space!)
+        is_spike = (target_expanded > self.z_threshold).float()
+
+        # Condition B: Did the model under-predict? (Error > 0 means Target > Pred)
+        is_under_predicted = (errors > 0).float()
+
+        # We ONLY apply the massive multiplier if it's a spike AND we under-predicted it.
+        # If we over-predict a spike, (is_under_predicted = 0), the multiplier becomes 1.0 (no extra penalty).
+        bravery_weights = 1.0 + (is_spike * is_under_predicted * self.brave_multiplier)
+        overshoot = F.relu(target_expanded - self.z_threshold)
+        multiplier = 1.0 + (bravery_weights * overshoot)
+
+        # 4. Apply weights and return mean
+        weighted_loss = standard_loss * multiplier
+        weighted_loss = torch.mean(weighted_loss, dim=2)
+
+        # is_spike is a binary mask: 1.0 for spikes, 0.0 for baseline
+        # We flatten the tensors to separate the timesteps easily
+        flat_loss = weighted_loss.view(-1)
+        flat_is_spike = is_spike.view(-1)
+
+        # 1. Calculate the mean of ONLY the normal, boring timesteps
+        normal_timesteps_loss = flat_loss[flat_is_spike == 0.0]
+        mean_normal_loss = (
+            torch.mean(normal_timesteps_loss) if len(normal_timesteps_loss) > 0 else 0.0
+        )
+
+        # 2. Calculate the mean of ONLY the spike timesteps
+        spike_timesteps_loss = flat_loss[flat_is_spike == 1.0]
+
+        # We must check if spikes exist in this specific batch to avoid NaN errors
+        if len(spike_timesteps_loss) > 0:
+            mean_spike_loss = torch.mean(spike_timesteps_loss)
+        else:
+            mean_spike_loss = 0.0
+
+        # 3. Combine them. Now a 15-minute spike has equal voting power to 225 minutes of baseline!
+        final_loss = mean_normal_loss + mean_spike_loss
+
+        return final_loss
 
 
 class TemporalFusionTrainer:
@@ -42,6 +98,7 @@ class TemporalFusionTrainer:
         self.scaler = GradScaler()
         self.device = device
         self.history = {"train_loss": [], "val_loss": []}
+        self.loss = AsymmetricSpikeQuantileLoss()
 
         # April 17, 2018 filter
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()
@@ -86,7 +143,7 @@ class TemporalFusionTrainer:
                         x_future_weather_conditions,
                         x_stat,
                     )
-                    loss = quantile_loss(quantiles, y) / accum_step
+                    loss = self.loss(quantiles, y) / accum_step
             else:
                 quantiles = self.model(
                     x_past_power,
@@ -98,7 +155,7 @@ class TemporalFusionTrainer:
                     x_future_weather_conditions,
                     x_stat,
                 )
-                loss = quantile_loss(quantiles, y)
+                loss = self.loss(quantiles, y)
 
             self.scaler.scale(loss).backward()
 
@@ -152,7 +209,7 @@ class TemporalFusionTrainer:
                     x_future_weather_conditions,
                     x_stat,
                 )
-                loss = quantile_loss(quantiles, y) / accum_step
+                loss = self.loss(quantiles, y) / accum_step
                 total_loss += loss.item()
                 batches += 1
 
