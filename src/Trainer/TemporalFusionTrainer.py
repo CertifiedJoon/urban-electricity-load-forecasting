@@ -24,12 +24,10 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         self.patch_size = patch_size
 
     def forward(self, preds, target):
-        # preds: [batch, seq_len, num_quantiles]
-        # target: [batch, seq_len]
         device = preds.device
-
         B, _ = target.shape
 
+        # Patching the targets to match the sequence length of preds
         targets_patched = target.view(B, -1, self.patch_size).mean(dim=-1)
 
         # 1. Expand dimensions for broadcasting
@@ -42,46 +40,61 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         # 3. Standard Pinball Loss
         standard_loss = torch.max(q_tensor * errors, (q_tensor - 1) * errors)
 
-        # --- THE FIX: ASYMMETRIC WEIGHTING ---
+        # --- THE FIX: BI-DIRECTIONAL ASYMMETRIC WEIGHTING ---
 
-        # Condition A: Is this a true spike? (Operating in Z-score space!)
-        is_spike = (target_expanded > self.z_threshold).float()
+        # Condition A: Is this an extreme event? (Operating in Z-score space)
+        is_peak = (target_expanded > self.z_threshold).float()
+        is_drop = (target_expanded < -self.z_threshold).float()
+        is_extreme = is_peak + is_drop  # Will be 1.0 if either is true
 
-        # Condition B: Did the model under-predict? (Error > 0 means Target > Pred)
-        is_under_predicted = (errors > 0).float()
+        # Condition B: Was the model cowardly?
+        # For peaks, cowardly means under-predicting (Target > Pred -> Error > 0)
+        cowardly_peak = is_peak * (errors > 0).float()
 
-        # We ONLY apply the massive multiplier if it's a spike AND we under-predicted it.
-        # If we over-predict a spike, (is_under_predicted = 0), the multiplier becomes 1.0 (no extra penalty).
-        bravery_weights = 1.0 + (is_spike * is_under_predicted * self.brave_multiplier)
-        overshoot = F.relu(target_expanded - self.z_threshold)
-        multiplier = 1.0 + (bravery_weights * overshoot)
+        # For drops, cowardly means over-predicting (Target < Pred -> Error < 0)
+        cowardly_drop = is_drop * (errors < 0).float()
 
-        # 4. Apply weights and return mean
+        is_cowardly = cowardly_peak + cowardly_drop
+
+        # Condition C: What is the magnitude of the extreme event?
+        # How far past the threshold did it actually go?
+        peak_magnitude = F.relu(target_expanded - self.z_threshold)
+        drop_magnitude = F.relu(-self.z_threshold - target_expanded)
+        extreme_magnitude = peak_magnitude + drop_magnitude
+
+        # Build the Multiplier
+        # If the model was cowardly during an extreme event, punish it heavily.
+        # If the model was brave (overshot a peak or undershot a drop), multiplier remains a safe 1.0.
+        multiplier = 1.0 + (is_cowardly * self.brave_multiplier * extreme_magnitude)
+
+        # 4. Apply weights and average across the 3 quantiles -> Shape: [B, seq_len]
         weighted_loss = standard_loss * multiplier
         weighted_loss = torch.mean(weighted_loss, dim=2)
 
-        # is_spike is a binary mask: 1.0 for spikes, 0.0 for baseline
-        # We flatten the tensors to separate the timesteps easily
+        # --- THE TEMPORAL DILUTION FIX (SPLIT-MEAN) ---
+
+        # Squeeze the trailing dimension off our extreme mask so it matches weighted_loss
+        is_extreme_2d = is_extreme.squeeze(-1)
+
+        # Flatten the tensors to separate the timesteps cleanly
         flat_loss = weighted_loss.view(-1)
-        flat_is_spike = is_spike.view(-1)
+        flat_is_extreme = is_extreme_2d.view(-1)
 
         # 1. Calculate the mean of ONLY the normal, boring timesteps
-        normal_timesteps_loss = flat_loss[flat_is_spike == 0.0]
+        normal_timesteps_loss = flat_loss[flat_is_extreme == 0.0]
         mean_normal_loss = (
             torch.mean(normal_timesteps_loss) if len(normal_timesteps_loss) > 0 else 0.0
         )
 
-        # 2. Calculate the mean of ONLY the spike timesteps
-        spike_timesteps_loss = flat_loss[flat_is_spike == 1.0]
-
-        # We must check if spikes exist in this specific batch to avoid NaN errors
-        if len(spike_timesteps_loss) > 0:
-            mean_spike_loss = torch.mean(spike_timesteps_loss)
+        # 2. Calculate the mean of ONLY the extreme timesteps (both peaks and drops)
+        extreme_timesteps_loss = flat_loss[flat_is_extreme == 1.0]
+        if len(extreme_timesteps_loss) > 0:
+            mean_extreme_loss = torch.mean(extreme_timesteps_loss)
         else:
-            mean_spike_loss = 0.0
+            mean_extreme_loss = 0.0
 
-        # 3. Combine them. Now a 15-minute spike has equal voting power to 225 minutes of baseline!
-        final_loss = mean_normal_loss + mean_spike_loss
+        # 3. Combine them. Extreme volatility now has equal voting power to the baseline!
+        final_loss = mean_normal_loss + mean_extreme_loss
 
         return final_loss
 
