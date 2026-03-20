@@ -57,8 +57,8 @@ if __name__ == "__main__":
 
     # choose mode
     print("1. Train + Interpret\n2. Interpret\n3. Smoke Test\nType 1 or 2 or 3:")
-    choice = int(input())
-    # choice = 1
+    # choice = int(input())
+    choice = 1
 
     train_dataset = IdealPytorchDataset(train_ids, orchestrator)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)

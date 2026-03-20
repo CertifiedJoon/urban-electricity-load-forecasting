@@ -96,7 +96,7 @@ class IdealPytorchDataset(Dataset):
 
                 # loss trend based sampling
                 if (
-                    np.random.rand() < (1 - max_loss_fall_pct)
+                    np.random.rand() < 0.3
                     and len(spike_start_pool) > 0
                 ):
                     start_idx = np.random.choice(spike_start_pool)

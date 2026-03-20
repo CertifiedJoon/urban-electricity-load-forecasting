@@ -13,7 +13,7 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         self,
         quantiles=[0.1, 0.5, 0.9],
         z_threshold=1.5,
-        brave_multiplier=5.0,
+        brave_multiplier=100.0,
         patch_size=10,
     ):
         super().__init__()
