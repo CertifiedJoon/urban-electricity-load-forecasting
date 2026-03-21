@@ -53,9 +53,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
 
         # ReduceLROnPlateau => reduce learning rate when loss plateus
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.5, patience=30
-        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
         # 3. Training & Eval
         trainer = CrossAttentionTrainer(
