@@ -16,8 +16,9 @@ if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     accumulation_step = 16  # multiply to batchsize!
     BATCH_SIZE = 4
-    EPOCHS = 500
-    LR = 1e-6
+    EPOCHS = 2000
+    LR = 1e-4
+    WARMUP = 10
     STATIC_FEATURES = [
         "homeid",
         "residents",
@@ -35,7 +36,7 @@ if __name__ == "__main__":
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=100, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=300, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -60,7 +61,7 @@ if __name__ == "__main__":
     # choice = int(input())
     choice = 1
 
-    train_dataset = IdealPytorchDataset(train_ids, orchestrator)
+    train_dataset = IdealPytorchDataset(train_ids, orchestrator, sampling_rate=0.5)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     pwr_stat = train_dataset.power_stats
     wth_stat = train_dataset.weather_stats
@@ -86,9 +87,12 @@ if __name__ == "__main__":
         model = TemporalFusionTransformer(orchestrator.cardinalities)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, mode="min", factor=0.1, patience=50
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=LR, total_iters=WARMUP)
+        later_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, later_scheduler],
+            milestones=[WARMUP],
         )
 
         trainer = TemporalFusionTrainer(
@@ -102,7 +106,7 @@ if __name__ == "__main__":
             print(
                 f"Epoch {epoch} | Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | LR: {optimizer.param_groups[0]['lr']}"
             )
-            scheduler.step(val_loss)
+            scheduler.step()
             early_stopping(val_loss, model)
 
             if early_stopping.early_stop:

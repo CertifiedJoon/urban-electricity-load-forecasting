@@ -4,3 +4,7 @@
 /data/auxiliarydata/
 /data/*.csv
 **/__pycache__
+model.pth
+output.log
+job
+slurm*

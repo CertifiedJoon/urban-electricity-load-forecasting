@@ -17,11 +17,13 @@ class IdealPytorchDataset(Dataset):
         power_stats=None,
         weather_stats=None,
         loss_momentum_length=10,
+        sampling_rate=0.2
     ):
         self.split = split
         self.window_size = window_size
         self.prediction_shift = prediction_shift
         self.samples = []
+        self.sampling_rate=sampling_rate
 
         for h_id in home_ids:
             static, dynamic = orchestrator.get_home_data(h_id)
@@ -81,7 +83,8 @@ class IdealPytorchDataset(Dataset):
             # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
             if self.split == "train":
                 spike_threshold = full_dyn["value"].quantile(0.85)
-                high_power_idx = np.where(full_dyn["value"].values > spike_threshold)[0]
+                fall_threshold = full_dyn["value"].quantile(0.15)
+                high_power_idx = np.where((full_dyn["value"].values < fall_threshold) | (full_dyn["value"].values > spike_threshold))[0]
 
                 valid_spike_starts = (
                     high_power_idx
@@ -96,7 +99,7 @@ class IdealPytorchDataset(Dataset):
 
                 # loss trend based sampling
                 if (
-                    np.random.rand() < 0.3
+                    np.random.rand() < self.sampling_rate
                     and len(spike_start_pool) > 0
                 ):
                     start_idx = np.random.choice(spike_start_pool)
