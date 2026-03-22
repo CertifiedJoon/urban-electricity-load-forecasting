@@ -13,10 +13,12 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         self,
         quantiles=[0.1, 0.5, 0.9],
         z_threshold=1.5,
-        brave_multiplier=100.0,
+        brave_multiplier=5.0,
         patch_size=10,
+        baseline=False
     ):
         super().__init__()
+        self.baseline=baseline
         self.quantiles = quantiles
         # z_threshold is in standard deviations (e.g., 1.5 = top ~7% of data)
         self.z_threshold = z_threshold
@@ -39,6 +41,8 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
 
         # 3. Standard Pinball Loss
         standard_loss = torch.max(q_tensor * errors, (q_tensor - 1) * errors)
+        if self.baseline:
+            return torch.mean(standard_loss.view(-1))
 
         # --- THE FIX: BI-DIRECTIONAL ASYMMETRIC WEIGHTING ---
 
@@ -101,7 +105,7 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
 
 class TemporalFusionTrainer:
     def __init__(
-        self, model, train_loader, val_loader, optimizer, scheduler, device="cuda"
+        self, model, train_loader, val_loader, optimizer, scheduler, device="cuda", baseline=False
     ):
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -111,7 +115,7 @@ class TemporalFusionTrainer:
         self.scaler = GradScaler()
         self.device = device
         self.history = {"train_loss": [], "val_loss": []}
-        self.loss = AsymmetricSpikeQuantileLoss()
+        self.loss = AsymmetricSpikeQuantileLoss(baseline=baseline)
 
         # April 17, 2018 filter
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()

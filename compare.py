@@ -11,11 +11,10 @@ import torch
 import random
 import os
 
-
 def get_predictions(model, data_loader, device="cuda"):
     """Runs a model over the DataLoader and returns flattened predictions and actuals."""
     model.eval()
-    all_p50, all_p90, all_actuals = [], [], []
+    all_p10, all_p50, all_p90, all_actuals = [], [], [], []
 
     with torch.no_grad():
         for batch in data_loader:
@@ -45,124 +44,151 @@ def get_predictions(model, data_loader, device="cuda"):
             if device == "cuda":
                 with torch.amp.autocast(device_type="cuda"):
                     quantiles, _, _ = model(
-                        x_past_power,
-                        x_past_time,
-                        x_past_temperature,
-                        x_past_weather_conditions,
-                        x_future_time,
-                        x_future_temperature,
-                        x_future_weather_conditions,
-                        x_stat,
+                        x_past_power, x_past_time, x_past_temperature,
+                        x_past_weather_conditions, x_future_time,
+                        x_future_temperature, x_future_weather_conditions, x_stat,
                     )
             else:
                 quantiles, _, _ = model(
-                    x_past_power,
-                    x_past_time,
-                    x_past_temperature,
-                    x_past_weather_conditions,
-                    x_future_time,
-                    x_future_temperature,
-                    x_future_weather_conditions,
-                    x_stat,
+                    x_past_power, x_past_time, x_past_temperature,
+                    x_past_weather_conditions, x_future_time,
+                    x_future_temperature, x_future_weather_conditions, x_stat,
                 )
 
             # Extract P50 (median) and P90 (upper bound)
+            p10 = quantiles[:, :, 0].cpu().numpy()
             p50 = quantiles[:, :, 1].cpu().numpy()
             p90 = quantiles[:, :, 2].cpu().numpy()
 
+            all_p10.append(p10)
             all_p50.append(p50)
             all_p90.append(p90)
             all_actuals.append(y.cpu().numpy())
 
     # Concatenate and flatten all batches into 1D arrays for global metric calculation
     return (
+        np.concatenate(all_p10).flatten(),
         np.concatenate(all_p50).flatten(),
         np.concatenate(all_p90).flatten(),
         np.concatenate(all_actuals).flatten(),
     )
-
-
-def calculate_metrics(p50, p90, actuals, dataset, peak_percentile=95):
-    """Calculates MAPE, PAPE, and P90 Coverage after denormalizing."""
-
+def calculate_metrics(p10, p50, p90, actuals, dataset, peak_percentile=90, trough_percentile=10, patch_size=10):
+    """Calculates MAPE, PAPE/TAPE, and Coverage for both peaks and troughs."""
+    
     # 1. Denormalize back to actual physical units (kW)
-    # This is CRITICAL. You cannot calculate MAPE on Z-scores!
+    p10_denorm = dataset.denormalize(p10)
     p50_denorm = dataset.denormalize(p50)
     p90_denorm = dataset.denormalize(p90)
+    
     actuals_denorm = dataset.denormalize(actuals)
+    # Reshape and mean to align with patch-based forecasting if necessary
+    actuals_denorm = actuals_denorm.reshape(-1, patch_size).mean(axis=1)
 
-    # 2. Global MAPE
-    # Added epsilon to prevent division by zero if power usage drops perfectly to 0
     epsilon = 1e-4
-    mape = (
-        np.mean(np.abs((actuals_denorm - p50_denorm) / (actuals_denorm + epsilon)))
-        * 100
-    )
 
-    # 3. Identify the "Peaks" (e.g., the top 5% of all usage in the test set)
+    # 2. Global Metrics
+    mae = np.mean(np.abs(actuals_denorm - p50_denorm))
+    total_error = np.sum(np.abs(actuals_denorm - p50_denorm))
+    total_actual = np.sum(actuals_denorm)
+    wmape = (total_error / total_actual) * 100 if total_actual > 0 else 0.0
+    
+    # 3. Peak Analysis (Top 10%)
     peak_threshold = np.percentile(actuals_denorm, peak_percentile)
     peak_indices = np.where(actuals_denorm >= peak_threshold)[0]
+    
+    if len(peak_indices) > 0:
+        p_act = actuals_denorm[peak_indices]
+        p_p50 = p50_denorm[peak_indices]
+        p_p90 = p90_denorm[peak_indices]
+        
+        pape = np.mean(np.abs((p_act - p_p50) / (p_act + epsilon))) * 100
+        p90_peak_cov = np.mean(p_act <= p_p90) * 100
+    else:
+        pape, p90_peak_cov = 0.0, 0.0
 
-    peak_actuals = actuals_denorm[peak_indices]
-    peak_p50 = p50_denorm[peak_indices]
-    peak_p90 = p90_denorm[peak_indices]
+    # 4. Trough Analysis (Bottom X%)
+    trough_threshold = np.percentile(actuals_denorm, trough_percentile)
+    trough_indices = np.where(actuals_denorm <= trough_threshold)[0]
 
-    # 4. PAPE (Peak Absolute Percentage Error)
-    # How accurate is the P50 prediction *only* during the most extreme spikes?
-    pape = np.mean(np.abs((peak_actuals - peak_p50) / (peak_actuals + epsilon))) * 100
+    if len(trough_indices) > 0:
+        t_act = actuals_denorm[trough_indices]
+        t_p50 = p50_denorm[trough_indices]
+        t_p10 = p10_denorm[trough_indices]
+        
+        tape = np.mean(np.abs((t_act - t_p50) / (t_act + epsilon))) * 100
+        p10_trough_cov = np.mean(t_act >= t_p10) * 100 # Coverage means actual is ABOVE the floor
+    else:
+        tape, p10_trough_cov = 0.0, 0.0
 
-    # 5. P90 Peak Coverage
-    # What percentage of actual peaks were successfully captured below the P90 bound?
-    p90_coverage = np.mean(peak_actuals <= peak_p90) * 100
-
-    return mape, pape, p90_coverage
+    return mae, wmape, pape, p90_peak_cov, tape, p10_trough_cov
 
 
 def run_ablation_study(
-    baseline_model, oracle_model, test_loader, dataset, device="cuda"
+    baseline_model, oracle_model, oracle_model2, test_loader, dataset, device="cuda", num_runs=1000
 ):
-    print("Evaluating Baseline Model (Random Sampling)...")
-    base_p50, base_p90, base_actuals = get_predictions(
-        baseline_model, test_loader, device
-    )
-    base_mape, base_pape, base_cov = calculate_metrics(
-        base_p50, base_p90, base_actuals, dataset
-    )
+    """Executes ablation study tracking both Peak and Trough accuracy."""
+    print(f"Running Ablation Study over {num_runs} randomized horizon passes...")
 
-    print("Evaluating Oracle Model (Stratified Sampling)...")
-    oracle_p50, oracle_p90, oracle_actuals = get_predictions(
-        oracle_model, test_loader, device
-    )
-    oracle_mape, oracle_pape, oracle_cov = calculate_metrics(
-        oracle_p50, oracle_p90, oracle_actuals, dataset
-    )
+    # Expanded dictionaries to track trough metrics
+    metrics_template = {"mae": [], "wmape": [], "pape": [], "p90_cov": [], "tape": [], "p10_cov": []}
+    base_metrics = {k: [] for k in metrics_template}
+    oracle_metrics = {k: [] for k in metrics_template}
+    oracle2_metrics = {k: [] for k in metrics_template}
 
-    # Format the results into a clean Pandas DataFrame for your report
-    results_df = pd.DataFrame(
-        {
-            "Metric": [
-                "Global MAPE (%)",
-                "PAPE (Top 5% Peaks) (%)",
-                "P90 Peak Coverage (%)",
-            ],
-            "Baseline (Random)": [
-                f"{base_mape:.2f}%",
-                f"{base_pape:.2f}%",
-                f"{base_cov:.2f}%",
-            ],
-            "Oracle (Stratified)": [
-                f"{oracle_mape:.2f}%",
-                f"{oracle_pape:.2f}%",
-                f"{oracle_cov:.2f}%",
-            ],
-        }
-    )
+    for i in range(num_runs):
+        print(f"  -> Execution Run {i + 1}/{num_runs}", end="\r")
+        
+        models = [
+            (baseline_model, base_metrics),
+            (oracle_model, oracle_metrics),
+            (oracle_model2, oracle2_metrics)
+        ]
 
-    print("\n=== ABLATION STUDY RESULTS ===")
+        for model, storage in models:
+            # Assuming get_predictions now returns p10, p50, p90, and actuals
+            p10, p50, p90, actuals = get_predictions(model, test_loader, device)
+            
+            mae, wmape, pape, p90_c, tape, p10_c = calculate_metrics(p10, p50, p90, actuals, dataset)
+            
+            storage["mae"].append(mae)
+            storage["wmape"].append(wmape)
+            storage["pape"].append(pape)
+            storage["p90_cov"].append(p90_c)
+            storage["tape"].append(tape)
+            storage["p10_cov"].append(p10_c)
+
+    def format_stat(metric_list, kw=False):
+        mean, std = np.mean(metric_list), np.std(metric_list)
+        return f"{mean:.2f}kW ± {std:.2f}kW" if kw else f"{mean:.2f}% ± {std:.2f}%"
+
+    # Create the summary table
+    results_df = pd.DataFrame({
+        "Metric": [
+            "Global MAE", "Global wMAPE", 
+            "PAPE (Top 10% Peaks)", "P90 Peak Coverage",
+            "TAPE (Bottom 10% Troughs)", "P10 Trough Coverage"
+        ],
+        "Baseline": [
+            format_stat(base_metrics["mae"], True), format_stat(base_metrics["wmape"]),
+            format_stat(base_metrics["pape"]), format_stat(base_metrics["p90_cov"]),
+            format_stat(base_metrics["tape"]), format_stat(base_metrics["p10_cov"])
+        ],
+        "Oracle (Asym)": [
+            format_stat(oracle_metrics["mae"], True), format_stat(oracle_metrics["wmape"]),
+            format_stat(oracle_metrics["pape"]), format_stat(oracle_metrics["p90_cov"]),
+            format_stat(oracle_metrics["tape"]), format_stat(oracle_metrics["p10_cov"])
+        ],
+        "Oracle (Strat+Asym)": [
+            format_stat(oracle2_metrics["mae"], True), format_stat(oracle2_metrics["wmape"]),
+            format_stat(oracle2_metrics["pape"]), format_stat(oracle2_metrics["p90_cov"]),
+            format_stat(oracle2_metrics["tape"]), format_stat(oracle2_metrics["p10_cov"])
+        ]
+    })
+
+    print("\n\n=== STABILIZED ABLATION STUDY RESULTS ===")
     print(results_df.to_string(index=False))
-
     return results_df
-
+    return results_df
 
 def load_model(model_path: str, orchestrator: IdealDatasetOrchestrator):
     model = TemporalFusionTransformer(orchestrator.cardinalities)
@@ -179,6 +205,7 @@ if __name__ == "__main__":
     EPOCHS = 2000
     LR = 1e-4
     WARMUP = 10
+    SR = 0.0
     STATIC_FEATURES = [
         "homeid",
         "residents",
@@ -193,6 +220,8 @@ if __name__ == "__main__":
         "ageband",
         "weeklyhoursofwork",
     ]
+    
+    print("SR: " + str(SR))
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
@@ -215,7 +244,7 @@ if __name__ == "__main__":
     val_ids = home_ids[train_idx:test_idx]
     test_ids = home_ids[test_idx:]
 
-    train_dataset = IdealPytorchDataset(train_ids, orchestrator, sampling_rate=0.5)
+    train_dataset = IdealPytorchDataset(train_ids, orchestrator, sampling_rate=SR)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     pwr_stat = train_dataset.power_stats
     wth_stat = train_dataset.weather_stats
@@ -229,11 +258,14 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     print("Input baseline model path. current path is " + os.getcwd() + ":")
-    model_path = input()
+    model_path = "training_results/1.0.7 (base final)/model.pth"
     baseline_model = load_model(model_path, orchestrator)
-    print("Input oracle model path. current path is " + os.getcwd() + ":")
-    model_path = input()
+    print("Input oracle assymetric model path. current path is " + os.getcwd() + ":")
+    model_path = "training_results/1.0.2 (Base Model)/model.pth"
     oracle_model = load_model(model_path, orchestrator)
+    print("Input oracle assymetric stratified model path. current path is " + os.getcwd() + ":")
+    model_path = "training_results/1.0.5 (oracle final)/model.pth"
+    oracle_model2 = load_model(model_path, orchestrator)
     results_table = run_ablation_study(
-        baseline_model, oracle_model, test_loader, test_dataset, device="cuda"
+        baseline_model, oracle_model, oracle_model2, test_loader, test_dataset, device="cuda"
     )

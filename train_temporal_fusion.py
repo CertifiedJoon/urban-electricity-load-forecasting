@@ -16,9 +16,15 @@ if __name__ == "__main__":
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     accumulation_step = 16  # multiply to batchsize!
     BATCH_SIZE = 4
-    EPOCHS = 2000
+    EPOCHS = 1000
     LR = 1e-4
     WARMUP = 10
+    SR = 0.0
+    BASELINE=True
+    PATIENCE=500
+    print("SR: " + str(SR))
+    print("BL: " + str(BASELINE))
+    print("PT: " + str(PATIENCE))
     STATIC_FEATURES = [
         "homeid",
         "residents",
@@ -36,7 +42,7 @@ if __name__ == "__main__":
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=300, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=PATIENCE, verbose=True, save_path="model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -61,7 +67,7 @@ if __name__ == "__main__":
     # choice = int(input())
     choice = 1
 
-    train_dataset = IdealPytorchDataset(train_ids, orchestrator, sampling_rate=0.5)
+    train_dataset = IdealPytorchDataset(train_ids, orchestrator, sampling_rate=SR)
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     pwr_stat = train_dataset.power_stats
     wth_stat = train_dataset.weather_stats
@@ -96,7 +102,7 @@ if __name__ == "__main__":
         )
 
         trainer = TemporalFusionTrainer(
-            model, train_loader, val_loader, optimizer, scheduler, device=DEVICE
+            model, train_loader, val_loader, optimizer, scheduler, device=DEVICE, baseline=BASELINE
         )
 
         for epoch in range(EPOCHS):
