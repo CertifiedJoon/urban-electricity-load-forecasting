@@ -15,8 +15,12 @@ class IdealDatasetOrchestrator:
     def get_home_data(self, home_id):
         # Get static data
         static_row = self.cached_meta[self.cached_meta["homeid"] == home_id]
+        if static_row.empty:
+            return None, None
         # Get time_series data
         dynamic_df = self.load_proc.process(home_id)
+        if dynamic_df is None:
+            return static_row.iloc[0], None
         weather_df = self.weather_proc.process(home_id)
         dynamic_df = dynamic_df.join(weather_df, how="inner")
         return static_row.iloc[0], dynamic_df

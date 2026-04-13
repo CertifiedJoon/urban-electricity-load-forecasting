@@ -29,7 +29,25 @@ class LoadProcessor(IdealDataProcessor):
         if file_path is None:
             return None
 
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path)
+        except pd.errors.EmptyDataError:
+            print(f"Home {home_id}: Skipped (Empty sensor file: {file_path})")
+            return None
+        except pd.errors.ParserError as exc:
+            print(f"Home {home_id}: Skipped (Unreadable sensor file: {file_path}; {exc})")
+            return None
+
+        required_columns = {"timestamp", "value"}
+        if not required_columns.issubset(df.columns):
+            print(
+                f"Home {home_id}: Skipped (Missing required columns {required_columns} in {file_path})"
+            )
+            return None
+
+        if df.empty:
+            print(f"Home {home_id}: Skipped (No rows in sensor file: {file_path})")
+            return None
 
         df["timestamp"] = pd.to_datetime(df["timestamp"])
 
