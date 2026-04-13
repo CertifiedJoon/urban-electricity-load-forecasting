@@ -13,7 +13,7 @@ class LoadProcessor(IdealDataProcessor):
 
     def find_file_for_home(self, home_id):
         # We need to find the file that matches the pattern:
-        pattern = re.compile(rf"home{home_id}*")
+        pattern = re.compile(rf"^home{home_id}(?:_|$)")
 
         if not os.path.exists(self.data_path):
             return None

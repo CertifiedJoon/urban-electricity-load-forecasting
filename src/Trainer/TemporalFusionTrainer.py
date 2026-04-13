@@ -112,7 +112,7 @@ class TemporalFusionTrainer:
         self.val_loader = val_loader
         self.optimizer = optimizer
         self.scheduler = scheduler
-        self.scaler = GradScaler()
+        self.scaler = GradScaler(enabled=str(device).startswith("cuda"))
         self.device = device
         self.history = {"train_loss": [], "val_loss": []}
         self.loss = AsymmetricSpikeQuantileLoss(baseline=baseline)
@@ -121,6 +121,12 @@ class TemporalFusionTrainer:
         # April 17, 2018 filter
         self.bad_start = pd.to_datetime("2018-04-17 08:50:00").timestamp()
         self.bad_end = pd.to_datetime("2018-04-17 09:50:00").timestamp()
+
+    def _forward_quantiles(self, *model_inputs):
+        outputs = self.model(*model_inputs)
+        if isinstance(outputs, tuple):
+            return outputs[0]
+        return outputs
 
     def train_epoch(self, accum_step):
         self.model.train()
@@ -149,9 +155,9 @@ class TemporalFusionTrainer:
                 batch["y"].to(self.device),
             )
 
-            if self.device == "cuda":
-                with autocast(self.device):
-                    quantiles = self.model(
+            if str(self.device).startswith("cuda"):
+                with autocast(device_type="cuda"):
+                    quantiles = self._forward_quantiles(
                         x_past_power,
                         x_past_time,
                         x_past_temperature,
@@ -161,9 +167,9 @@ class TemporalFusionTrainer:
                         x_future_weather_conditions,
                         x_stat,
                     )
-                    loss = self.loss(quantiles, y) / accum_step
+                    loss = self.loss(quantiles, y)
             else:
-                quantiles = self.model(
+                quantiles = self._forward_quantiles(
                     x_past_power,
                     x_past_time,
                     x_past_temperature,
@@ -175,9 +181,10 @@ class TemporalFusionTrainer:
                 )
                 loss = self.loss(quantiles, y)
 
-            self.scaler.scale(loss).backward()
+            loss_for_backward = loss / accum_step
+            self.scaler.scale(loss_for_backward).backward()
 
-            if (i + 1) % accum_step == 0:
+            if (i + 1) % accum_step == 0 or (i + 1) == len(self.train_loader):
                 self.scaler.unscale_(self.optimizer)
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.1)
                 self.scaler.step(self.optimizer)
@@ -217,17 +224,31 @@ class TemporalFusionTrainer:
                     batch["x_static"].to(self.device),
                     batch["y"].to(self.device),
                 )
-                quantiles, _, _ = self.model(
-                    x_past_power,
-                    x_past_time,
-                    x_past_temperature,
-                    x_past_weather_conditions,
-                    x_future_time,
-                    x_future_temperature,
-                    x_future_weather_conditions,
-                    x_stat,
-                )
-                loss = self.loss(quantiles, y) / accum_step
+                if str(self.device).startswith("cuda"):
+                    with autocast(device_type="cuda"):
+                        quantiles = self._forward_quantiles(
+                            x_past_power,
+                            x_past_time,
+                            x_past_temperature,
+                            x_past_weather_conditions,
+                            x_future_time,
+                            x_future_temperature,
+                            x_future_weather_conditions,
+                            x_stat,
+                        )
+                        loss = self.loss(quantiles, y)
+                else:
+                    quantiles = self._forward_quantiles(
+                        x_past_power,
+                        x_past_time,
+                        x_past_temperature,
+                        x_past_weather_conditions,
+                        x_future_time,
+                        x_future_temperature,
+                        x_future_weather_conditions,
+                        x_stat,
+                    )
+                    loss = self.loss(quantiles, y)
                 total_loss += loss.item()
                 batches += 1
 
@@ -244,5 +265,5 @@ class TemporalFusionTrainer:
         plt.legend()
         plt.grid(color="grey", linestyle="-", linewidth=0.5)
         plt.ylim(0, 0.1)
-        plt.ylabel("NLL Loss")
+        plt.ylabel("Loss")
         plt.savefig(self.result_path + "/LearningCurve.png")

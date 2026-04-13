@@ -17,13 +17,15 @@ class IdealPytorchDataset(Dataset):
         power_stats=None,
         weather_stats=None,
         loss_momentum_length=10,
-        sampling_rate=0.2
+        sampling_rate=0.2,
+        eval_samples_per_home=1,
     ):
         self.split = split
         self.window_size = window_size
         self.prediction_shift = prediction_shift
         self.samples = []
-        self.sampling_rate=sampling_rate
+        self.sampling_rate = sampling_rate
+        self.eval_samples_per_home = max(1, int(eval_samples_per_home))
 
         for h_id in home_ids:
             static, dynamic = orchestrator.get_home_data(h_id)
@@ -62,24 +64,41 @@ class IdealPytorchDataset(Dataset):
         # track train loss
         self.loss_trend = deque()
         self.loss_momentum_length = loss_momentum_length
+        self.eval_index = []
+
+        if self.split != "train":
+            for sample_idx, sample in enumerate(self.samples):
+                max_start = len(sample["dynamic"]) - self.window_size - self.prediction_shift
+                for start_idx in self._build_eval_start_indices(max_start):
+                    self.eval_index.append((sample_idx, start_idx))
 
     def __len__(self):
-        return len(self.samples)
+        if self.split == "train":
+            return len(self.samples)
+        return len(self.eval_index)
 
     def denormalize(self, z_score):
-        """Helper to convert standardized predictions back to kW for evaluation"""
-        return (z_score * self.power_stats["std"]) + self.power_stats["mean"]
+        """Convert standardized log-power values back to power in the original scale."""
+        log_value = (z_score * self.power_stats["std"]) + self.power_stats["mean"]
+        if torch.is_tensor(log_value):
+            return torch.expm1(log_value)
+        return np.expm1(log_value)
 
     def __getitem__(self, idx):
-        sample = self.samples[idx]
+        if self.split == "train":
+            sample = self.samples[idx]
+            start_idx = None
+        else:
+            sample_idx, start_idx = self.eval_index[idx]
+            sample = self.samples[sample_idx]
         full_dyn = sample["dynamic"]
         static_data = sample["static"]
 
-        max_start = len(full_dyn) - self.window_size - self.prediction_shift
+        max_start = max(0, len(full_dyn) - self.window_size - self.prediction_shift)
 
-        if max_start <= 0:
+        if start_idx is None and max_start <= 0:
             start_idx = 0
-        else:
+        elif start_idx is None:
             # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
             if self.split == "train":
                 spike_threshold = full_dyn["value"].quantile(0.85)
@@ -95,7 +114,6 @@ class IdealPytorchDataset(Dataset):
                 spike_start_pool = valid_spike_starts[
                     (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
                 ]
-                max_loss_fall_pct = self._get_max_fall_pct()
 
                 # loss trend based sampling
                 if (
@@ -104,10 +122,7 @@ class IdealPytorchDataset(Dataset):
                 ):
                     start_idx = np.random.choice(spike_start_pool)
                 else:
-                    start_idx = np.random.randint(0, max_start)
-            else:
-                # Validation and Test MUST use random sampling for honest evaluation
-                start_idx = np.random.randint(0, max_start)
+                    start_idx = np.random.randint(0, max_start + 1)
 
         # --- 5. EXTRACT & STANDARDIZE SEQUENCES ---
         input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size].copy()
@@ -201,7 +216,7 @@ class IdealPytorchDataset(Dataset):
             raise ValueError(f"Home ID {home_id} not found in dataset.")
 
         # Standardize
-        power = target_sample["dynamic"]
+        power = target_sample["dynamic"].copy()
         power["value"] = (power["value"] - self.power_stats["mean"]) / self.power_stats[
             "std"
         ]
@@ -247,12 +262,6 @@ class IdealPytorchDataset(Dataset):
             static_features,
         )
 
-    def denormalize(self, val):
-        """Converts model output back to log-scale for plotting"""
-        if self.power_stats:
-            return (val * self.power_stats["std"]) + self.power_stats["mean"]
-        return val
-
     def update_loss_trend(self, loss):
         if len(self.loss_trend) >= self.loss_momentum_length:
             self.loss_trend.popleft()
@@ -268,3 +277,12 @@ class IdealPytorchDataset(Dataset):
             elif max_fall_pct < (max_loss - loss) / max_loss:
                 max_fall_pct = max(0, (max_loss - loss) / max_loss)
         return max_fall_pct
+
+    def _build_eval_start_indices(self, max_start):
+        if max_start <= 0:
+            return [0]
+        if self.eval_samples_per_home == 1:
+            return [max_start // 2]
+
+        indices = np.linspace(0, max_start, num=self.eval_samples_per_home, dtype=int)
+        return np.unique(indices).tolist()
