@@ -11,4 +11,4 @@ conda activate myenv
 
 # cd your your desired directory and execute your program, e.g.
 cd urban-electricity-load-forecasting
-python -u -m train_temporal_fusion > output.log 2>&1
+python -u -m train_temporal_fusion 0.0 > output.log 2>&1

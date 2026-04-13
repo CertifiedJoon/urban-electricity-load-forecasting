@@ -94,7 +94,7 @@ def visualize_rolling_week_point(model, dataset, home_id, device="cuda"):
 
 
 def visualize_tft_rolling_week(
-    model, dataset, home_id, feature_names=None, device="cuda", smoke_test=False
+    model, dataset, home_id, path, feature_names=None, device="cuda", smoke_test=False
 ):
     model.eval()
 
@@ -218,13 +218,13 @@ def visualize_tft_rolling_week(
     plt.xticks(rotation=15)
 
     plt.tight_layout()
-    plt.savefig("interpretation.png")
+    plt.savefig(path + "/interpretation.png")
 
 
 from matplotlib.colors import LinearSegmentedColormap
 
 
-def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test=False):
+def visualize_density_heatmap(model, dataset, home_id, path, device="cuda", smoke_test=False):
     model.eval()
 
     # Configuration
@@ -368,5 +368,5 @@ def visualize_density_heatmap(model, dataset, home_id, device="cuda", smoke_test
     fig.colorbar(im, ax=ax, label="Cumulative Forecast Consensus")
 
     plt.tight_layout()
-    plt.savefig(f"interpretation_home{str(home_id)}.png")
+    plt.savefig(f"{path}/interpretation_home{str(home_id)}.png")
     plt.close()

@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 import torch
 import random
 import os
-
+import sys
 # os.environ["ONEDNN_VERBOSE"] = "all"
 if __name__ == "__main__":
     # Settings
@@ -19,7 +19,13 @@ if __name__ == "__main__":
     EPOCHS = 1000
     LR = 1e-4
     WARMUP = 10
-    SR = 0.0
+    if len(sys.argv) > 1:
+        SR = float(sys.argv[1])
+    else:
+        SR = 0.0
+        
+    os.makedir(str(SR))
+    
     BASELINE=True
     PATIENCE=500
     print("SR: " + str(SR))
@@ -42,7 +48,7 @@ if __name__ == "__main__":
 
     # Pipeline Setup
     orchestrator = IdealDatasetOrchestrator(DATA_DIR)
-    early_stopping = EarlyStopping(patience=PATIENCE, verbose=True, save_path="model.pth")
+    early_stopping = EarlyStopping(patience=PATIENCE, verbose=True, save_path=str(SR) + "/model.pth")
 
     # Select home IDs (In real usage, list available IDs from file)
     home_ids = [
@@ -128,7 +134,7 @@ if __name__ == "__main__":
         #     device=DEVICE,
         # )
         for test_id in test_ids:
-            visualize_density_heatmap(model, test_dataset, test_id, device=DEVICE)
+            visualize_density_heatmap(model, test_dataset, test_id, path=str(SR), device=DEVICE)
     elif choice == 2:
         test_dataset = IdealPytorchDataset(
             test_ids,
@@ -184,7 +190,7 @@ if __name__ == "__main__":
         )
 
         trainer = TemporalFusionTrainer(
-            model, train_loader, val_loader, optimizer, scheduler, device=DEVICE
+            model, train_loader, val_loader, optimizer, scheduler, result_path=str(SR), device=DEVICE
         )
 
         for epoch in range(EPOCHS):
