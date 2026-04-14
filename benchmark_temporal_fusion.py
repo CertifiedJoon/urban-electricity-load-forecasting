@@ -117,10 +117,14 @@ def get_quantiles(model, batch, device):
     return outputs
 
 
-def collect_predictions(model, data_loader, device, baseline_loss):
+def collect_predictions(model, data_loader, device, baseline_loss, w_peak=2.0, w_trough=2.0):
     model.eval()
     pinball_criterion = AsymmetricSpikeQuantileLoss(baseline=True)
-    objective_criterion = AsymmetricSpikeQuantileLoss(baseline=baseline_loss)
+    objective_criterion = AsymmetricSpikeQuantileLoss(
+        baseline=baseline_loss,
+        w_peak=w_peak,
+        w_trough=w_trough,
+    )
 
     all_quantiles = []
     all_targets = []
@@ -393,6 +397,8 @@ def run_variant(base_config, variant):
         benchmark_loader,
         base_config["device"],
         baseline_loss=variant["loss_name"] == "pinball",
+        w_peak=variant.get("w_peak", 2.0),
+        w_trough=variant.get("w_trough", 2.0),
     )
     metrics = evaluate_predictions(
         predictions["quantiles"],
@@ -414,6 +420,8 @@ def run_variant(base_config, variant):
     metrics["variant"] = variant["name"]
     metrics["sampling_rate"] = variant["sampling_rate"]
     metrics["loss_name"] = variant["loss_name"]
+    metrics["w_peak"] = variant.get("w_peak", 2.0)
+    metrics["w_trough"] = variant.get("w_trough", 2.0)
     metrics["model_path"] = experiment["model_path"]
     return metrics, preview, breakdown
 
