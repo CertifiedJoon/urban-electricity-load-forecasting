@@ -1,0 +1,2 @@
+mae_kw,wmape_pct,pape_pct,p90_peak_coverage_pct,tape_pct,p10_trough_coverage_pct,pinball_loss,objective_loss,variant,sampling_rate,loss_name,model_path
+11426.359111205358,61.17238687662707,63.150370237999,51.4,53954386.818990774,97.67080745341616,0.12028165424663502,0.2479621413333986,oracle_asymmetric_sr0.5,0.5,asymmetric,training_results/benchmark_tft/oracle_asymmetric_sr0.5/model.pth

@@ -1,0 +1,16 @@
+[
+  {
+    "mae_kw": 11426.359111205358,
+    "wmape_pct": 61.17238687662707,
+    "pape_pct": 63.150370237999,
+    "p90_peak_coverage_pct": 51.4,
+    "tape_pct": 53954386.818990774,
+    "p10_trough_coverage_pct": 97.67080745341616,
+    "pinball_loss": 0.12028165424663502,
+    "objective_loss": 0.2479621413333986,
+    "variant": "oracle_asymmetric_sr0.5",
+    "sampling_rate": 0.5,
+    "loss_name": "asymmetric",
+    "model_path": "training_results/benchmark_tft/oracle_asymmetric_sr0.5/model.pth"
+  }
+]
