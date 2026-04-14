@@ -191,13 +191,13 @@ def main():
             "model_path": run_config["model_path"],
         }
         result.update(metrics)
-        result["peak_mae_kw"] = breakdown["peak"]["mae_kw"]
-        result["peak_bias_kw"] = breakdown["peak"]["bias_kw"]
-        result["peak_interval_width_kw"] = breakdown["peak"]["interval_width_kw"]
+        result["peak_mae_w"] = breakdown["peak"]["mae_w"]
+        result["peak_bias_w"] = breakdown["peak"]["bias_w"]
+        result["peak_interval_width_w"] = breakdown["peak"]["interval_width_w"]
         result["peak_count"] = breakdown["peak"]["count"]
-        result["trough_mae_kw"] = breakdown["trough"]["mae_kw"]
-        result["trough_bias_kw"] = breakdown["trough"]["bias_kw"]
-        result["trough_interval_width_kw"] = breakdown["trough"]["interval_width_kw"]
+        result["trough_mae_w"] = breakdown["trough"]["mae_w"]
+        result["trough_bias_w"] = breakdown["trough"]["bias_w"]
+        result["trough_interval_width_w"] = breakdown["trough"]["interval_width_w"]
         result["trough_count"] = breakdown["trough"]["count"]
         results.append(result)
 
@@ -215,7 +215,7 @@ def main():
                 "w_peak",
                 "w_trough",
                 "objective_loss",
-                "mae_kw",
+                "mae_w",
                 "pape_pct",
                 "tape_pct",
                 "p90_peak_coverage_pct",

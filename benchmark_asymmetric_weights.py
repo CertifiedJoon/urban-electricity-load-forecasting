@@ -95,7 +95,7 @@ def plot_group_metric_sweeps(group_df, output_root):
         "diagonal": "Diagonal sweep: W_peak = W_trough",
     }
     colors = {
-        "mae_kw": "#264653",
+        "mae_w": "#264653",
         "pape_pct": "#e76f51",
         "tape_pct": "#2a9d8f",
         "p90_peak_coverage_pct": "#1d3557",
@@ -108,7 +108,7 @@ def plot_group_metric_sweeps(group_df, output_root):
         x = subset["sweep_value"].to_numpy()
 
         error_ax = axes[row_idx, 0]
-        error_ax.plot(x, subset["mae_kw"], marker="o", color=colors["mae_kw"], label="MAE (kW)")
+        error_ax.plot(x, subset["mae_w"], marker="o", color=colors["mae_w"], label="MAE (W)")
         error_ax.plot(x, subset["pape_pct"], marker="o", color=colors["pape_pct"], label="PAPE (%)")
         error_ax.plot(x, subset["tape_pct"], marker="o", color=colors["tape_pct"], label="TAPE (%)")
         error_ax.set_title(group_titles[group_name])
@@ -169,34 +169,34 @@ def plot_group_bias_breakdown(group_df, output_root):
         x = subset["sweep_value"].to_numpy()
 
         peak_ax = axes[row_idx, 0]
-        peak_ax.plot(x, subset["peak_mae_kw"], marker="o", color="#e76f51", label="Peak MAE")
-        peak_ax.plot(x, subset["peak_bias_kw"], marker="o", color="#d62828", label="Peak Bias")
+        peak_ax.plot(x, subset["peak_mae_w"], marker="o", color="#e76f51", label="Peak MAE")
+        peak_ax.plot(x, subset["peak_bias_w"], marker="o", color="#d62828", label="Peak Bias")
         peak_ax.plot(
             x,
-            subset["peak_interval_width_kw"],
+            subset["peak_interval_width_w"],
             marker="o",
             color="#f4a261",
             label="Peak Interval Width",
         )
         peak_ax.axhline(0, color="#6c757d", linestyle="--", linewidth=1)
         peak_ax.set_title(group_titles[group_name])
-        peak_ax.set_ylabel("Peak Metrics (kW)")
+        peak_ax.set_ylabel("Peak Metrics (W)")
         peak_ax.grid(alpha=0.2)
         if row_idx == 0:
             peak_ax.legend(frameon=False)
 
         trough_ax = axes[row_idx, 1]
-        trough_ax.plot(x, subset["trough_mae_kw"], marker="o", color="#2a9d8f", label="Trough MAE")
-        trough_ax.plot(x, subset["trough_bias_kw"], marker="o", color="#1d3557", label="Trough Bias")
+        trough_ax.plot(x, subset["trough_mae_w"], marker="o", color="#2a9d8f", label="Trough MAE")
+        trough_ax.plot(x, subset["trough_bias_w"], marker="o", color="#1d3557", label="Trough Bias")
         trough_ax.plot(
             x,
-            subset["trough_interval_width_kw"],
+            subset["trough_interval_width_w"],
             marker="o",
             color="#8ecae6",
             label="Trough Interval Width",
         )
         trough_ax.axhline(0, color="#6c757d", linestyle="--", linewidth=1)
-        trough_ax.set_ylabel("Trough Metrics (kW)")
+        trough_ax.set_ylabel("Trough Metrics (W)")
         trough_ax.grid(alpha=0.2)
         if row_idx == 0:
             trough_ax.legend(frameon=False)
@@ -270,13 +270,13 @@ def run_weight_config(base_config, config):
         "model_path": experiment["model_path"],
     }
     result.update(metrics)
-    result["peak_mae_kw"] = breakdown["peak"]["mae_kw"]
-    result["peak_bias_kw"] = breakdown["peak"]["bias_kw"]
-    result["peak_interval_width_kw"] = breakdown["peak"]["interval_width_kw"]
+    result["peak_mae_w"] = breakdown["peak"]["mae_w"]
+    result["peak_bias_w"] = breakdown["peak"]["bias_w"]
+    result["peak_interval_width_w"] = breakdown["peak"]["interval_width_w"]
     result["peak_count"] = breakdown["peak"]["count"]
-    result["trough_mae_kw"] = breakdown["trough"]["mae_kw"]
-    result["trough_bias_kw"] = breakdown["trough"]["bias_kw"]
-    result["trough_interval_width_kw"] = breakdown["trough"]["interval_width_kw"]
+    result["trough_mae_w"] = breakdown["trough"]["mae_w"]
+    result["trough_bias_w"] = breakdown["trough"]["bias_w"]
+    result["trough_interval_width_w"] = breakdown["trough"]["interval_width_w"]
     result["trough_count"] = breakdown["trough"]["count"]
     return result
 
@@ -350,7 +350,7 @@ def main():
                 "w_peak",
                 "w_trough",
                 "objective_loss",
-                "mae_kw",
+                "mae_w",
                 "pape_pct",
                 "tape_pct",
                 "p90_peak_coverage_pct",

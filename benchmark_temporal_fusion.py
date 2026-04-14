@@ -37,7 +37,7 @@ VARIANTS = [
 ]
 
 METRIC_PLOT_CONFIG = [
-    ("mae_kw", "MAE (kW)", False),
+    ("mae_w", "MAE (W)", False),
     ("wmape_pct", "wMAPE (%)", False),
     ("pape_pct", "Peak APE (%)", False),
     ("tape_pct", "Trough APE (%)", False),
@@ -178,7 +178,7 @@ def evaluate_predictions(quantiles, patched_targets, dataset):
     p10_trough_cov = float(np.mean(actuals[trough_mask] >= p10[trough_mask]) * 100) if np.any(trough_mask) else 0.0
 
     return {
-        "mae_kw": mae,
+        "mae_w": mae,
         "wmape_pct": wmape,
         "pape_pct": pape,
         "p90_peak_coverage_pct": p90_peak_cov,
@@ -204,15 +204,15 @@ def build_peak_trough_breakdown(quantiles, patched_targets, dataset):
     def summarize(mask):
         if not np.any(mask):
             return {
-                "mae_kw": 0.0,
-                "bias_kw": 0.0,
-                "interval_width_kw": 0.0,
+                "mae_w": 0.0,
+                "bias_w": 0.0,
+                "interval_width_w": 0.0,
                 "count": 0,
             }
         return {
-            "mae_kw": float(np.mean(np.abs(errors[mask]))),
-            "bias_kw": float(np.mean(errors[mask])),
-            "interval_width_kw": float(np.mean(interval_width[mask])),
+            "mae_w": float(np.mean(np.abs(errors[mask]))),
+            "bias_w": float(np.mean(errors[mask])),
+            "interval_width_w": float(np.mean(interval_width[mask])),
             "count": int(np.sum(mask)),
         }
 
@@ -296,7 +296,7 @@ def plot_forecast_preview(previews, output_root):
         ax.set_title(variant_name)
         ax.grid(alpha=0.2)
         ax.set_xlabel("Patch Index")
-        ax.set_ylabel("Power (kW)")
+        ax.set_ylabel("Power (W)")
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", ncol=3, frameon=False)
@@ -315,10 +315,10 @@ def plot_peak_trough_breakdown(breakdowns, output_root):
     colors = ["#264653", "#2a9d8f", "#e9c46a", "#e76f51"]
 
     plot_specs = [
-        ("peak", "mae_kw", "Peak MAE (kW)"),
-        ("peak", "bias_kw", "Peak Bias (kW)"),
-        ("trough", "mae_kw", "Trough MAE (kW)"),
-        ("trough", "bias_kw", "Trough Bias (kW)"),
+        ("peak", "mae_w", "Peak MAE (W)"),
+        ("peak", "bias_w", "Peak Bias (W)"),
+        ("trough", "mae_w", "Trough MAE (W)"),
+        ("trough", "bias_w", "Trough Bias (W)"),
     ]
 
     for ax, (bucket, metric_key, title) in zip(axes, plot_specs):
@@ -327,11 +327,11 @@ def plot_peak_trough_breakdown(breakdowns, output_root):
         ax.set_title(title)
         ax.tick_params(axis="x", rotation=20)
         ax.grid(axis="y", alpha=0.2)
-        if metric_key == "bias_kw":
+        if metric_key == "bias_w":
             ax.axhline(0.0, color="#6c757d", linestyle="--", linewidth=1)
 
         max_abs = max(abs(v) for v in values) if values else 1.0
-        if metric_key == "bias_kw":
+        if metric_key == "bias_w":
             limit = max_abs * 1.2 if max_abs > 0 else 1.0
             ax.set_ylim(-limit, limit)
         else:
@@ -339,7 +339,7 @@ def plot_peak_trough_breakdown(breakdowns, output_root):
 
         for bar, value in zip(bars, values):
             y = bar.get_height()
-            if metric_key == "bias_kw" and value < 0:
+            if metric_key == "bias_w" and value < 0:
                 va = "top"
             else:
                 va = "bottom"
