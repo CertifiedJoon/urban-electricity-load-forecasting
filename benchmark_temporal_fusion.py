@@ -14,21 +14,21 @@ from train_temporal_fusion import create_data_loaders, run_training_experiment
 
 
 VARIANTS = [
-    {
-        "name": "base_pinball_sr0.0",
-        "sampling_rate": 0.0,
-        "loss_name": "pinball",
-    },
-    {
-        "name": "oracle_pinball_sr0.5",
-        "sampling_rate": 0.5,
-        "loss_name": "pinball",
-    },
-    {
-        "name": "oracle_asymmetric_sr0.0",
-        "sampling_rate": 0.0,
-        "loss_name": "asymmetric",
-    },
+    # {
+    #     "name": "base_pinball_sr0.0",
+    #     "sampling_rate": 0.0,
+    #     "loss_name": "pinball",
+    # },
+    # {
+    #     "name": "oracle_pinball_sr0.5",
+    #     "sampling_rate": 0.5,
+    #     "loss_name": "pinball",
+    # },
+    # {
+    #     "name": "oracle_asymmetric_sr0.0",
+    #     "sampling_rate": 0.0,
+    #     "loss_name": "asymmetric",
+    # },
     {
         "name": "oracle_asymmetric_sr0.5",
         "sampling_rate": 0.5,

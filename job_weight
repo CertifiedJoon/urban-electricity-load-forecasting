@@ -3,7 +3,7 @@
 # Tell the system the resources you need. Adjust the numbers according to your need, e.g.
 # -p batch - use partition/queue named batch
 # --time=5:00:00 - set a time limit of 5 hours
-#SBATCH -p batch --nodes=1 --gres=gpu:1 --cpus-per-task=4 --time=05:00:00 --mail-type=ALL
+#SBATCH -p batch --nodes=1 --gres=gpu:1 --cpus-per-task=4 --time=24:00:00 --mail-type=ALL
 
 #If you use Anaconda, initialize it
 . $HOME/anaconda3/etc/profile.d/conda.sh
@@ -11,4 +11,4 @@ conda activate myenv
 
 # cd your your desired directory and execute your program, e.g.
 cd urban-electricity-load-forecasting
-python benchmark_temporal_fusion.py --output-root training_results/benchmark_tft > output.log 2>&1
+python benchmark_asymmetric_weights.py > output.log 2>&1
