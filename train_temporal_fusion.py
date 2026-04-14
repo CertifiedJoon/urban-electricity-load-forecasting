@@ -207,6 +207,7 @@ def run_training_experiment(config):
         "device": device,
         "w_peak": config.get("w_peak", 2.0),
         "w_trough": config.get("w_trough", 2.0),
+        "smoke_test": config["smoke_test"],
     }
     with open(os.path.join(config["output_dir"], "run_config.json"), "w", encoding="utf-8") as handle:
         json.dump(run_metadata, handle, indent=2)

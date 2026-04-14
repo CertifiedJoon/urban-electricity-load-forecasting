@@ -281,6 +281,33 @@ def run_weight_config(base_config, config):
     return result
 
 
+def save_weight_benchmark_outputs(results, output_root):
+    results_df = pd.DataFrame(results).sort_values(["w_peak", "w_trough"]).reset_index(drop=True)
+    group_df = explode_group_rows(results)
+
+    results_csv = os.path.join(output_root, "asymmetric_weight_results.csv")
+    group_csv = os.path.join(output_root, "asymmetric_weight_group_results.csv")
+    results_json = os.path.join(output_root, "asymmetric_weight_results.json")
+
+    results_df.to_csv(results_csv, index=False)
+    group_df.to_csv(group_csv, index=False)
+    with open(results_json, "w", encoding="utf-8") as handle:
+        json.dump(results, handle, indent=2)
+
+    summary_png = plot_group_metric_sweeps(group_df, output_root)
+    bias_png = plot_group_bias_breakdown(group_df, output_root)
+
+    return {
+        "results_df": results_df,
+        "group_df": group_df,
+        "results_csv": results_csv,
+        "group_csv": group_csv,
+        "results_json": results_json,
+        "summary_png": summary_png,
+        "bias_png": bias_png,
+    }
+
+
 def main():
     args = parse_args()
     os.makedirs(args.output_root, exist_ok=True)
@@ -312,20 +339,8 @@ def main():
         )
         results.append(run_weight_config(base_config, config))
 
-    results_df = pd.DataFrame(results).sort_values(["w_peak", "w_trough"]).reset_index(drop=True)
-    group_df = explode_group_rows(results)
-
-    results_csv = os.path.join(args.output_root, "asymmetric_weight_results.csv")
-    group_csv = os.path.join(args.output_root, "asymmetric_weight_group_results.csv")
-    results_json = os.path.join(args.output_root, "asymmetric_weight_results.json")
-
-    results_df.to_csv(results_csv, index=False)
-    group_df.to_csv(group_csv, index=False)
-    with open(results_json, "w", encoding="utf-8") as handle:
-        json.dump(results, handle, indent=2)
-
-    summary_png = plot_group_metric_sweeps(group_df, args.output_root)
-    bias_png = plot_group_bias_breakdown(group_df, args.output_root)
+    outputs = save_weight_benchmark_outputs(results, args.output_root)
+    results_df = outputs["results_df"]
 
     print("\nUnique configuration summary:")
     print(
@@ -343,11 +358,11 @@ def main():
             ]
         ].to_string(index=False)
     )
-    print(f"\nSaved unique results CSV to {results_csv}")
-    print(f"Saved group results CSV to {group_csv}")
-    print(f"Saved JSON to {results_json}")
-    print(f"Saved summary plot to {summary_png}")
-    print(f"Saved bias breakdown plot to {bias_png}")
+    print(f"\nSaved unique results CSV to {outputs['results_csv']}")
+    print(f"Saved group results CSV to {outputs['group_csv']}")
+    print(f"Saved JSON to {outputs['results_json']}")
+    print(f"Saved summary plot to {outputs['summary_png']}")
+    print(f"Saved bias breakdown plot to {outputs['bias_png']}")
 
 
 if __name__ == "__main__":
