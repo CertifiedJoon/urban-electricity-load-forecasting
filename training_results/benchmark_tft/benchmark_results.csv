@@ -1,2 +1,5 @@
-mae_kw,wmape_pct,pape_pct,p90_peak_coverage_pct,tape_pct,p10_trough_coverage_pct,pinball_loss,objective_loss,variant,sampling_rate,loss_name,model_path
-11426.359111205358,61.17238687662707,63.150370237999,51.4,53954386.818990774,97.67080745341616,0.12028165424663502,0.2479621413333986,oracle_asymmetric_sr0.5,0.5,asymmetric,training_results/benchmark_tft/oracle_asymmetric_sr0.5/model.pth
+mae_w,wmape_pct,pape_pct,p90_peak_coverage_pct,tape_pct,p10_trough_coverage_pct,pinball_loss,objective_loss,variant,sampling_rate,loss_name,w_peak,w_trough,model_path
+9826.022119543803,52.60479044156533,57.9859688681152,43.6,929110054.4293834,90.83850931677019,0.06861462351382495,0.06861462351382495,base_pinball_sr0.0,0.0,pinball,2.0,2.0,training_results/benchmark_tft/base_pinball_sr0.0/model.pth
+10039.499432619954,53.747666895716925,56.484574182223746,41.8,597014318.4427123,88.81987577639751,0.07348702462891546,0.07348702462891546,oracle_pinball_sr0.5,0.5,pinball,2.0,2.0,training_results/benchmark_tft/oracle_pinball_sr0.5/model.pth
+11257.249986933855,60.26704085401175,70.83484738142607,35.0,41222963.529811576,98.75776397515527,0.10998510315011327,0.24477086909330234,oracle_asymmetric_sr0.0,0.0,asymmetric,2.0,2.0,training_results/benchmark_tft/oracle_asymmetric_sr0.0/model.pth
+11426.359111205358,61.17238687662707,63.150370237999,51.4,53954386.818990774,97.67080745341616,0.12028165424663502,0.2479621413333986,oracle_asymmetric_sr0.5,0.5,asymmetric,2.0,2.0,training_results/benchmark_tft/oracle_asymmetric_sr0.5/model.pth
