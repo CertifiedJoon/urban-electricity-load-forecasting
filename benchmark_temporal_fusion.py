@@ -426,6 +426,28 @@ def run_variant(base_config, variant):
     return metrics, preview, breakdown
 
 
+def save_benchmark_outputs(results, previews, breakdowns, output_root):
+    results_df = pd.DataFrame(results)
+    results_csv = os.path.join(output_root, "benchmark_results.csv")
+    results_json = os.path.join(output_root, "benchmark_results.json")
+    dashboard_png = plot_metric_dashboard(results_df, output_root)
+    preview_png = plot_forecast_preview(previews, output_root)
+    breakdown_png = plot_peak_trough_breakdown(breakdowns, output_root)
+
+    results_df.to_csv(results_csv, index=False)
+    with open(results_json, "w", encoding="utf-8") as handle:
+        json.dump(results, handle, indent=2)
+
+    return {
+        "results_df": results_df,
+        "results_csv": results_csv,
+        "results_json": results_json,
+        "dashboard_png": dashboard_png,
+        "preview_png": preview_png,
+        "breakdown_png": breakdown_png,
+    }
+
+
 def main():
     args = parse_args()
     os.makedirs(args.output_root, exist_ok=True)
@@ -456,24 +478,16 @@ def main():
         previews[variant["name"]] = preview
         breakdowns[variant["name"]] = breakdown
 
-    results_df = pd.DataFrame(results)
-    results_csv = os.path.join(args.output_root, "benchmark_results.csv")
-    results_json = os.path.join(args.output_root, "benchmark_results.json")
-    dashboard_png = plot_metric_dashboard(results_df, args.output_root)
-    preview_png = plot_forecast_preview(previews, args.output_root)
-    breakdown_png = plot_peak_trough_breakdown(breakdowns, args.output_root)
-
-    results_df.to_csv(results_csv, index=False)
-    with open(results_json, "w", encoding="utf-8") as handle:
-        json.dump(results, handle, indent=2)
+    outputs = save_benchmark_outputs(results, previews, breakdowns, args.output_root)
+    results_df = outputs["results_df"]
 
     print("\nBenchmark summary:")
     print(results_df.to_string(index=False))
-    print(f"\nSaved CSV to {results_csv}")
-    print(f"Saved JSON to {results_json}")
-    print(f"Saved dashboard to {dashboard_png}")
-    print(f"Saved forecast preview to {preview_png}")
-    print(f"Saved peak/trough breakdown to {breakdown_png}")
+    print(f"\nSaved CSV to {outputs['results_csv']}")
+    print(f"Saved JSON to {outputs['results_json']}")
+    print(f"Saved dashboard to {outputs['dashboard_png']}")
+    print(f"Saved forecast preview to {outputs['preview_png']}")
+    print(f"Saved peak/trough breakdown to {outputs['breakdown_png']}")
 
 
 if __name__ == "__main__":
