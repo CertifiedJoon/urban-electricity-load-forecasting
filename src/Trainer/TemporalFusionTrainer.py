@@ -13,16 +13,22 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         self,
         quantiles=[0.1, 0.5, 0.9],
         z_threshold=1.5,
-        brave_multiplier=2.0,
+        brave_multiplier=None,
+        w_peak=2.0,
+        w_trough=2.0,
         patch_size=10,
         baseline=False,
     ):
         super().__init__()
-        self.baseline=baseline
+        self.baseline = baseline
         self.quantiles = quantiles
         # z_threshold is in standard deviations (e.g., 1.5 = top ~7% of data)
         self.z_threshold = z_threshold
-        self.brave_multiplier = brave_multiplier
+        if brave_multiplier is not None:
+            w_peak = brave_multiplier
+            w_trough = brave_multiplier
+        self.w_peak = w_peak
+        self.w_trough = w_trough
         self.patch_size = patch_size
 
     def forward(self, preds, target):
@@ -58,8 +64,6 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         # For drops, cowardly means over-predicting (Target < Pred -> Error < 0)
         cowardly_drop = is_drop * (errors < 0).float()
 
-        is_cowardly = cowardly_peak + cowardly_drop
-
         # Condition C: What is the magnitude of the extreme event?
         # How far past the threshold did it actually go?
         peak_magnitude = F.relu(target_expanded - self.z_threshold)
@@ -69,7 +73,9 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         # Build the Multiplier
         # If the model was cowardly during an extreme event, punish it heavily.
         # If the model was brave (overshot a peak or undershot a drop), multiplier remains a safe 1.0.
-        multiplier = 1.0 + (is_cowardly * self.brave_multiplier * extreme_magnitude)
+        peak_multiplier = 1.0 + (cowardly_peak * self.w_peak * peak_magnitude)
+        trough_multiplier = 1.0 + (cowardly_drop * self.w_trough * drop_magnitude)
+        multiplier = torch.maximum(peak_multiplier, trough_multiplier)
 
         # 4. Apply weights and average across the 3 quantiles -> Shape: [B, seq_len]
         weighted_loss = standard_loss * multiplier
@@ -105,7 +111,17 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
 
 class TemporalFusionTrainer:
     def __init__(
-        self, model, train_loader, val_loader, optimizer, scheduler, result_path, device="cuda", baseline=False
+        self,
+        model,
+        train_loader,
+        val_loader,
+        optimizer,
+        scheduler,
+        result_path,
+        device="cuda",
+        baseline=False,
+        w_peak=2.0,
+        w_trough=2.0,
     ):
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -115,7 +131,11 @@ class TemporalFusionTrainer:
         self.scaler = GradScaler(enabled=str(device).startswith("cuda"))
         self.device = device
         self.history = {"train_loss": [], "val_loss": []}
-        self.loss = AsymmetricSpikeQuantileLoss(baseline=baseline)
+        self.loss = AsymmetricSpikeQuantileLoss(
+            baseline=baseline,
+            w_peak=w_peak,
+            w_trough=w_trough,
+        )
         self.result_path = result_path
 
         # April 17, 2018 filter

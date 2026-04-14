@@ -188,6 +188,8 @@ def run_training_experiment(config):
         result_path=config["output_dir"],
         device=device,
         baseline=config["loss_name"] == "pinball",
+        w_peak=config.get("w_peak", 2.0),
+        w_trough=config.get("w_trough", 2.0),
     )
 
     run_metadata = {
@@ -203,6 +205,8 @@ def run_training_experiment(config):
         "seed": config["seed"],
         "eval_samples_per_home": config["eval_samples_per_home"],
         "device": device,
+        "w_peak": config.get("w_peak", 2.0),
+        "w_trough": config.get("w_trough", 2.0),
     }
     with open(os.path.join(config["output_dir"], "run_config.json"), "w", encoding="utf-8") as handle:
         json.dump(run_metadata, handle, indent=2)
@@ -267,6 +271,8 @@ def parse_args():
     parser.add_argument("--accumulation-step", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--eval-samples-per-home", type=int, default=1)
+    parser.add_argument("--w-peak", type=float, default=2.0)
+    parser.add_argument("--w-trough", type=float, default=2.0)
     parser.add_argument("--skip-interpret", action="store_true")
     parser.add_argument("--smoke-test", action="store_true")
     return parser.parse_args()
@@ -295,6 +301,8 @@ def main():
             "accumulation_step": args.accumulation_step,
             "seed": args.seed,
             "eval_samples_per_home": args.eval_samples_per_home,
+            "w_peak": args.w_peak,
+            "w_trough": args.w_trough,
             "output_dir": output_dir,
             "smoke_test": args.smoke_test,
         }
