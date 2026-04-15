@@ -14,24 +14,28 @@ from train_temporal_fusion import create_data_loaders, run_training_experiment
 
 
 VARIANTS = [
-    {
-        "name": "base_pinball_sr0.0",
-        "sampling_rate": 0.0,
-        "loss_name": "pinball",
-    },
-    {
-        "name": "oracle_pinball_sr0.5",
-        "sampling_rate": 0.5,
-        "loss_name": "pinball",
-    },
+    # {
+    #     "name": "base_pinball_sr0.0",
+    #     "sampling_rate": 0.0,
+    #     "loss_name": "pinball",
+    # },
+    # {
+    #     "name": "oracle_pinball_sr0.5",
+    #     "sampling_rate": 0.5,
+    #     "loss_name": "pinball",
+    # },
     {
         "name": "oracle_asymmetric_sr0.0",
         "sampling_rate": 0.0,
+        "w_peak": 5,
+        "w_trough": 5,
         "loss_name": "asymmetric",
     },
     {
         "name": "oracle_asymmetric_sr0.5",
         "sampling_rate": 0.5,
+        "w_peak": 5,
+        "w_trough": 5,
         "loss_name": "asymmetric",
     },
 ]
@@ -46,18 +50,58 @@ METRIC_PLOT_CONFIG = [
 ]
 
 
+def compute_axis_limits(values, include_zero=False, reference_values=None, symmetric=False):
+    numeric_values = np.asarray(values, dtype=float)
+    numeric_values = numeric_values[np.isfinite(numeric_values)]
+
+    extras = []
+    if reference_values is not None:
+        extras = np.atleast_1d(reference_values).astype(float).tolist()
+
+    if numeric_values.size == 0 and not extras:
+        return (-1.0, 1.0) if symmetric else (0.0, 1.0)
+
+    combined = numeric_values
+    if extras:
+        combined = np.concatenate([numeric_values, np.asarray(extras, dtype=float)])
+
+    if symmetric:
+        max_abs = float(np.max(np.abs(combined))) if combined.size else 1.0
+        pad = max(max_abs * 0.15, 1.0 if max_abs >= 1.0 else 0.05)
+        return -max_abs - pad, max_abs + pad
+
+    lower = float(np.min(combined)) if combined.size else 0.0
+    upper = float(np.max(combined)) if combined.size else 1.0
+
+    if include_zero:
+        lower = min(lower, 0.0)
+        upper = max(upper, 0.0)
+
+    spread = upper - lower
+    if spread == 0:
+        pad = max(abs(upper) * 0.08, 1.0 if abs(upper) >= 1.0 else 0.05)
+    else:
+        pad = max(spread * 0.15, 1.0 if max(abs(lower), abs(upper)) >= 1.0 else 0.05)
+
+    return lower - pad, upper + pad
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Train and benchmark multiple Temporal Fusion Transformer variants."
     )
     parser.add_argument("--data-dir", default="data")
-    parser.add_argument("--output-root", default=os.path.join("training_results", "benchmark_tft"))
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument(
+        "--output-root", default=os.path.join("training_results", "benchmark_tft")
+    )
+    parser.add_argument(
+        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
+    )
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--epochs", type=int, default=1000)
+    parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--warmup-epochs", type=int, default=10)
-    parser.add_argument("--patience", type=int, default=500)
+    parser.add_argument("--patience", type=int, default=100)
     parser.add_argument("--accumulation-step", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
@@ -117,7 +161,9 @@ def get_quantiles(model, batch, device):
     return outputs
 
 
-def collect_predictions(model, data_loader, device, baseline_loss, w_peak=2.0, w_trough=2.0):
+def collect_predictions(
+    model, data_loader, device, baseline_loss, w_peak=2.0, w_trough=2.0
+):
     model.eval()
     pinball_criterion = AsymmetricSpikeQuantileLoss(baseline=True)
     objective_criterion = AsymmetricSpikeQuantileLoss(
@@ -167,15 +213,43 @@ def evaluate_predictions(quantiles, patched_targets, dataset):
     peak_mask = actuals >= peak_threshold
     trough_mask = actuals <= trough_threshold
 
-    pape = float(
-        np.mean(np.abs((actuals[peak_mask] - p50[peak_mask]) / (actuals[peak_mask] + epsilon))) * 100
-    ) if np.any(peak_mask) else 0.0
-    p90_peak_cov = float(np.mean(actuals[peak_mask] <= p90[peak_mask]) * 100) if np.any(peak_mask) else 0.0
+    pape = (
+        float(
+            np.mean(
+                np.abs(
+                    (actuals[peak_mask] - p50[peak_mask])
+                    / (actuals[peak_mask] + epsilon)
+                )
+            )
+            * 100
+        )
+        if np.any(peak_mask)
+        else 0.0
+    )
+    p90_peak_cov = (
+        float(np.mean(actuals[peak_mask] <= p90[peak_mask]) * 100)
+        if np.any(peak_mask)
+        else 0.0
+    )
 
-    tape = float(
-        np.mean(np.abs((actuals[trough_mask] - p50[trough_mask]) / (actuals[trough_mask] + epsilon))) * 100
-    ) if np.any(trough_mask) else 0.0
-    p10_trough_cov = float(np.mean(actuals[trough_mask] >= p10[trough_mask]) * 100) if np.any(trough_mask) else 0.0
+    tape = (
+        float(
+            np.mean(
+                np.abs(
+                    (actuals[trough_mask] - p50[trough_mask])
+                    / (actuals[trough_mask] + epsilon)
+                )
+            )
+            * 100
+        )
+        if np.any(trough_mask)
+        else 0.0
+    )
+    p10_trough_cov = (
+        float(np.mean(actuals[trough_mask] >= p10[trough_mask]) * 100)
+        if np.any(trough_mask)
+        else 0.0
+    )
 
     return {
         "mae_w": mae,
@@ -250,14 +324,25 @@ def plot_metric_dashboard(results_df, output_root):
         ax.tick_params(axis="x", rotation=20)
         ax.grid(axis="y", alpha=0.2)
 
+        reference = None
         if target_coverage:
-            ax.axhline(90 if "p90" in metric_key else 90, color="#6c757d", linestyle="--", linewidth=1)
+            reference = 90.0
+            ax.axhline(
+                reference,
+                color="#6c757d",
+                linestyle="--",
+                linewidth=1,
+            )
 
-        upper = max(values) if len(values) else 1.0
-        ax.set_ylim(0, upper * 1.18 if upper > 0 else 1.0)
+        lower, upper = compute_axis_limits(values, reference_values=reference)
+        ax.set_ylim(lower, upper)
 
         for bar, value in zip(bars, values):
-            label = f"{value:.1f}" if "coverage" in metric_key or "pct" in metric_key else f"{value:.3f}"
+            label = (
+                f"{value:,.0f}"
+                if metric_key.endswith("_w")
+                else f"{value:.1f}"
+            )
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height(),
@@ -283,7 +368,13 @@ def plot_forecast_preview(previews, output_root):
         preview = previews[variant_name]
         time_axis = np.arange(len(preview["actuals"]))
 
-        ax.plot(time_axis, preview["actuals"], color="#111111", linewidth=1.5, label="Actual")
+        ax.plot(
+            time_axis,
+            preview["actuals"],
+            color="#111111",
+            linewidth=1.5,
+            label="Actual",
+        )
         ax.plot(time_axis, preview["p50"], color="#1d3557", linewidth=1.5, label="P50")
         ax.fill_between(
             time_axis,
@@ -330,12 +421,11 @@ def plot_peak_trough_breakdown(breakdowns, output_root):
         if metric_key == "bias_w":
             ax.axhline(0.0, color="#6c757d", linestyle="--", linewidth=1)
 
-        max_abs = max(abs(v) for v in values) if values else 1.0
         if metric_key == "bias_w":
-            limit = max_abs * 1.2 if max_abs > 0 else 1.0
-            ax.set_ylim(-limit, limit)
+            lower, upper = compute_axis_limits(values, reference_values=0.0, symmetric=True)
         else:
-            ax.set_ylim(0, max(values) * 1.18 if max(values) > 0 else 1.0)
+            lower, upper = compute_axis_limits(values)
+        ax.set_ylim(lower, upper)
 
         for bar, value in zip(bars, values):
             y = bar.get_height()
@@ -346,14 +436,16 @@ def plot_peak_trough_breakdown(breakdowns, output_root):
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 y,
-                f"{value:.3f}",
+                f"{value:,.0f}",
                 ha="center",
                 va=va,
                 fontsize=9,
             )
 
     peak_count = breakdowns[variant_names[0]]["peak"]["count"] if variant_names else 0
-    trough_count = breakdowns[variant_names[0]]["trough"]["count"] if variant_names else 0
+    trough_count = (
+        breakdowns[variant_names[0]]["trough"]["count"] if variant_names else 0
+    )
     fig.suptitle(
         f"Peak/Trough Error Breakdown (top 10% peaks n={peak_count}, bottom 10% troughs n={trough_count})",
         fontsize=16,

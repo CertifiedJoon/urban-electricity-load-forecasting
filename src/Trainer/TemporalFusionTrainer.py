@@ -277,13 +277,27 @@ class TemporalFusionTrainer:
         return avg_loss
 
     def plot_learning_curves(self):
-        plt.figure(figsize=(10, 5))
-        plt.plot(self.history["train_loss"], label="Train Loss")
-        plt.plot(self.history["val_loss"], label="Val Loss")
-        plt.title("Temporal Fusion Model Convergence")
-        plt.xlabel("Epoch")
-        plt.legend()
-        plt.grid(color="grey", linestyle="-", linewidth=0.5)
-        plt.ylim(0, 0.1)
-        plt.ylabel("Loss")
-        plt.savefig(self.result_path + "/LearningCurve.png")
+        fig, ax = plt.subplots(figsize=(10, 5))
+        epochs = range(1, len(self.history["train_loss"]) + 1)
+        ax.plot(epochs, self.history["train_loss"], label="Train Loss")
+        ax.plot(epochs, self.history["val_loss"], label="Val Loss")
+        ax.set_title("Temporal Fusion Model Convergence")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.grid(color="grey", linestyle="-", linewidth=0.5, alpha=0.5)
+
+        all_losses = self.history["train_loss"] + self.history["val_loss"]
+        if all_losses:
+            min_loss = min(all_losses)
+            max_loss = max(all_losses)
+            spread = max_loss - min_loss
+            if spread == 0:
+                pad = max(abs(max_loss) * 0.05, 1e-4)
+            else:
+                pad = max(spread * 0.12, 1e-4)
+            ax.set_ylim(min_loss - pad, max_loss + pad)
+
+        fig.tight_layout()
+        fig.savefig(self.result_path + "/LearningCurve.png")
+        plt.close(fig)

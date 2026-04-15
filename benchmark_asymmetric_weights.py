@@ -9,6 +9,7 @@ import torch
 from benchmark_temporal_fusion import (
     build_peak_trough_breakdown,
     collect_predictions,
+    compute_axis_limits,
     evaluate_predictions,
     make_test_loader,
 )
@@ -87,7 +88,7 @@ def explode_group_rows(results):
 
 
 def plot_group_metric_sweeps(group_df, output_root):
-    fig, axes = plt.subplots(3, 2, figsize=(16, 14), sharex="col")
+    fig, axes = plt.subplots(3, 4, figsize=(22, 14), sharex="col")
     group_order = ["trough_only", "peak_only", "diagonal"]
     group_titles = {
         "trough_only": "W_peak = 0, sweep W_trough",
@@ -107,17 +108,29 @@ def plot_group_metric_sweeps(group_df, output_root):
         subset = group_df[group_df["group_name"] == group_name].sort_values("sweep_value")
         x = subset["sweep_value"].to_numpy()
 
-        error_ax = axes[row_idx, 0]
-        error_ax.plot(x, subset["mae_w"], marker="o", color=colors["mae_w"], label="MAE (W)")
-        error_ax.plot(x, subset["pape_pct"], marker="o", color=colors["pape_pct"], label="PAPE (%)")
-        error_ax.plot(x, subset["tape_pct"], marker="o", color=colors["tape_pct"], label="TAPE (%)")
-        error_ax.set_title(group_titles[group_name])
-        error_ax.set_ylabel("Error")
-        error_ax.grid(alpha=0.2)
+        mae_ax = axes[row_idx, 0]
+        mae_ax.plot(x, subset["mae_w"], marker="o", color=colors["mae_w"], label="MAE (W)")
+        mae_ax.set_title(group_titles[group_name])
+        mae_ax.set_ylabel("MAE (W)")
+        mae_ax.grid(alpha=0.2)
+        mae_ax.set_ylim(*compute_axis_limits(subset["mae_w"].to_numpy()))
         if row_idx == 0:
-            error_ax.legend(frameon=False)
+            mae_ax.legend(frameon=False)
 
-        coverage_ax = axes[row_idx, 1]
+        ape_ax = axes[row_idx, 1]
+        ape_ax.plot(x, subset["pape_pct"], marker="o", color=colors["pape_pct"], label="PAPE (%)")
+        ape_ax.plot(x, subset["tape_pct"], marker="o", color=colors["tape_pct"], label="TAPE (%)")
+        if row_idx == 0:
+            ape_ax.set_title("Peak/Trough APE (%)")
+        ape_ax.set_ylabel("APE (%)")
+        ape_ax.grid(alpha=0.2)
+        ape_ax.set_ylim(
+            *compute_axis_limits(subset[["pape_pct", "tape_pct"]].to_numpy().reshape(-1))
+        )
+        if row_idx == 0:
+            ape_ax.legend(frameon=False)
+
+        coverage_ax = axes[row_idx, 2]
         coverage_ax.plot(
             x,
             subset["p90_peak_coverage_pct"],
@@ -132,21 +145,39 @@ def plot_group_metric_sweeps(group_df, output_root):
             color=colors["p10_trough_coverage_pct"],
             label="P10 Trough Cov (%)",
         )
-        coverage_ax.plot(
+        coverage_ax.axhline(90, color="#6c757d", linestyle="--", linewidth=1)
+        if row_idx == 0:
+            coverage_ax.set_title("Coverage (%)")
+        coverage_ax.set_ylabel("Coverage (%)")
+        coverage_ax.grid(alpha=0.2)
+        coverage_ax.set_ylim(
+            *compute_axis_limits(
+                subset[["p90_peak_coverage_pct", "p10_trough_coverage_pct"]].to_numpy().reshape(-1),
+                reference_values=90.0,
+            )
+        )
+        if row_idx == 0:
+            coverage_ax.legend(frameon=False)
+
+        loss_ax = axes[row_idx, 3]
+        loss_ax.plot(
             x,
             subset["objective_loss"],
             marker="o",
             color=colors["objective_loss"],
             label="Objective Loss",
         )
-        coverage_ax.axhline(90, color="#6c757d", linestyle="--", linewidth=1)
-        coverage_ax.set_ylabel("Coverage / Loss")
-        coverage_ax.grid(alpha=0.2)
         if row_idx == 0:
-            coverage_ax.legend(frameon=False)
+            loss_ax.set_title("Objective Loss")
+        loss_ax.set_ylabel("Objective Loss")
+        loss_ax.grid(alpha=0.2)
+        loss_ax.set_ylim(*compute_axis_limits(subset["objective_loss"].to_numpy()))
+        if row_idx == 0:
+            loss_ax.legend(frameon=False)
 
-    axes[-1, 0].set_xlabel("Sweep Weight Value")
-    axes[-1, 1].set_xlabel("Sweep Weight Value")
+    for col_idx in range(4):
+        axes[-1, col_idx].set_xlabel("Sweep Weight Value")
+
     fig.suptitle("Asymmetric Weight Sweep Summary", fontsize=16)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     output_path = os.path.join(output_root, "weight_sweep_summary.png")
@@ -182,6 +213,12 @@ def plot_group_bias_breakdown(group_df, output_root):
         peak_ax.set_title(group_titles[group_name])
         peak_ax.set_ylabel("Peak Metrics (W)")
         peak_ax.grid(alpha=0.2)
+        peak_ax.set_ylim(
+            *compute_axis_limits(
+                subset[["peak_mae_w", "peak_bias_w", "peak_interval_width_w"]].to_numpy().reshape(-1),
+                reference_values=0.0,
+            )
+        )
         if row_idx == 0:
             peak_ax.legend(frameon=False)
 
@@ -198,6 +235,12 @@ def plot_group_bias_breakdown(group_df, output_root):
         trough_ax.axhline(0, color="#6c757d", linestyle="--", linewidth=1)
         trough_ax.set_ylabel("Trough Metrics (W)")
         trough_ax.grid(alpha=0.2)
+        trough_ax.set_ylim(
+            *compute_axis_limits(
+                subset[["trough_mae_w", "trough_bias_w", "trough_interval_width_w"]].to_numpy().reshape(-1),
+                reference_values=0.0,
+            )
+        )
         if row_idx == 0:
             trough_ax.legend(frameon=False)
 
