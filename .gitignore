@@ -8,3 +8,5 @@ model.pth
 output.log
 job
 slurm*
+/poster-spa/
+/venv/

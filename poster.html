@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Probabilistic electricity load forecasting for urban buildings</title>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@400;700;900&display=swap');
+
+  :root {
+    --bg-dark: #07090e;
+    --neon-blue: #00e5ff;
+    --neon-orange: #f97316;
+    --card-bg: rgba(16, 20, 28, 0.8);
+    --border-accent: rgba(0, 229, 255, 0.2);
+    --text-main: #f8fafc;
+    --text-muted: #cbd5e1;
+    --neon-glow: 0 0 40px rgba(0, 229, 255, 0.4);
+    --orange-glow: 0 0 40px rgba(249, 115, 22, 0.4);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: 800mm 2000mm; margin: 0; }
+
+  body {
+    width: 800mm; height: 2000mm;
+    background: radial-gradient(circle at 40% 30%, #171d2b 0%, #050608 100%);
+    font-family: 'Inter', sans-serif; color: var(--text-main);
+    overflow: hidden; position: relative;
+  }
+
+  body::before {
+    content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.04) 2mm, transparent 2mm),
+                      linear-gradient(90deg, rgba(255, 255, 255, 0.04) 2mm, transparent 2mm);
+    background-size: 40mm 40mm; z-index: 0; pointer-events: none;
+  }
+
+  .banner-container {
+    width: 800mm; height: 100vh; max-height: 2000mm; position: relative; z-index: 1;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* 1. TOP LOGO AREA: 150mm */
+  .logo-area {
+    width: 800mm; height: 150mm; display: flex; justify-content: space-between; align-items: center;
+    padding: 0 40mm; background: linear-gradient(180deg, rgba(0,0,0,0.7), transparent);
+  }
+
+  .logo-placeholder {
+    width: 80mm; height: 80mm; border-radius: 50%; border: 2mm dotted var(--neon-blue);
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 229, 255, 0.1); color: var(--neon-blue);
+    font-family: 'Outfit'; font-size: 15mm; font-weight: 700;
+  }
+
+  .university-text {
+    font-family: 'Outfit'; font-size: 13mm; font-weight: 600;
+    text-transform: uppercase; color: var(--text-muted); letter-spacing: 2mm;
+  }
+
+  /* 2. SAFE CONTENT AREA: Responsive to remaining height */
+  .safe-content {
+    flex: 1; min-height: 0; padding: 10mm 40mm;
+    display: flex; flex-direction: column; gap: 15mm;
+    overflow: hidden; justify-content: space-evenly;
+  }
+
+  .header-section { text-align: center; }
+  
+  h1 {
+    font-family: 'Outfit', sans-serif; font-size: 36mm; font-weight: 900;
+    line-height: 1.1; margin-bottom: 12mm; text-transform: uppercase;
+    background: linear-gradient(135deg, #ffffff, var(--neon-blue));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-shadow: var(--neon-glow);
+  }
+
+  .author-info { font-size: 13mm; color: var(--neon-blue); font-weight: 600; letter-spacing: 0.5mm; }
+  .author-info span { color: var(--text-muted); font-weight: 400; }
+
+  /* Grid Area */
+  .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20mm; flex: 1; min-height: 0; align-items: start;}
+
+  .card {
+    background: var(--card-bg); border: 1.5mm solid var(--border-accent);
+    border-radius: 10mm; padding: 20mm; backdrop-filter: blur(25px);
+    position: relative; box-shadow: 0 10mm 45mm rgba(0,0,0,0.6);
+  }
+  .card-glow { 
+    top: -1.5mm; left: -1.5mm; right: -1.5mm; height: 4mm; position: absolute; 
+    border-radius: 10mm 10mm 0 0; background: linear-gradient(90deg, var(--neon-blue), transparent); 
+  }
+  .card.orange-theme .card-glow { background: linear-gradient(90deg, var(--neon-orange), transparent); }
+  .card.orange-theme { border-color: rgba(249, 115, 22, 0.3); }
+
+  .card-title {
+    font-family: 'Outfit', sans-serif; font-size: 19mm; font-weight: 800;
+    color: var(--neon-blue); text-transform: uppercase; letter-spacing: 1mm;
+    margin-bottom: 20mm; display: flex; align-items: center; gap: 8mm;
+  }
+  .orange-theme .card-title { color: var(--neon-orange); }
+
+  p, li { font-size: 11mm; line-height: 1.6; color: var(--text-main); margin-bottom: 12mm; }
+  ul { padding-left: 20mm; margin-bottom: 15mm; }
+  li { margin-bottom: 8mm; }
+  .highlight { color: #fff; font-weight: 800; }
+
+  .concept-box {
+    background: rgba(0,0,0,0.6); border: 1mm solid rgba(255,255,255,0.1);
+    border-radius: 6mm;
+  }
+
+  .stats-container { display: flex; flex-direction: column; gap: 15mm; }
+  .stat-row { 
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(0,0,0,0.5); padding: 15mm 20mm; border-radius: 8mm;
+    border-left: 4mm solid var(--neon-blue);
+  }
+  .stat-row.orange { border-color: var(--neon-orange); }
+  .stat-num { font-family: 'Outfit'; font-size: 32mm; font-weight: 900; color: var(--neon-blue); }
+  .stat-num.orange { color: var(--neon-orange); text-shadow: var(--orange-glow); }
+  .stat-desc { font-size: 12mm; color: #fff; font-weight: 600; width: 60%; line-height: 1.4; }
+
+  .span-card { grid-column: span 2; display: flex; gap: 20mm; align-items: center;}
+  
+  /* Images */
+  .urban-img {
+    width: 100%; height: 100mm; object-fit: cover; border-radius: 6mm;
+    margin-top: 10mm; border: 1.5mm solid var(--border-accent);
+  }
+
+  .forecast-img {
+    width: 100%; max-height: 180mm; object-fit: contain; border-radius: 6mm;
+    flex: 1; padding: 5mm; background: rgba(0,0,0,0.7); border: 1.5mm dashed var(--neon-orange);
+  }
+
+  /* 3. CONTACT ZONE: 500mm */
+  .bottom-zone {
+    width: 800mm; height: 500mm; position: relative;
+    background: linear-gradient(to bottom, transparent 0%, #000 80%);
+    display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 60mm 40mm;
+  }
+  
+  .qr-placeholder {
+    width: 120mm; height: 120mm; background: #fff; border-radius: 8mm;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14mm; color: #000; font-family: 'Outfit';
+  }
+  
+  .contact-info { width: 450mm; margin-bottom: 15mm; }
+  .contact-info h3 { font-size: 18mm; color: #fff; margin-bottom: 12mm; font-family: 'Outfit'; border-left: 4mm solid var(--neon-orange); padding-left: 10mm;}
+  .contact-info p { font-size: 12.5mm; color: var(--text-muted); margin-bottom: 10mm; }
+  
+  .bleed-warning { position: absolute; bottom: 20mm; left: 0; width: 100%; text-align: center; color: rgba(255,255,255,0.1); font-size: 10mm; font-weight: 800; text-transform: uppercase; letter-spacing: 5mm;}
+</style>
+</head>
+<body>
+<div class="banner-container">
+  
+  <div class="logo-area">
+    <div class="logo-placeholder">LOGO</div>
+    <div class="university-text">Dept. of Electrical and Electronic Eng.</div>
+  </div>
+
+  <div class="safe-content">
+    
+    <div class="header-section">
+      <h1>Probabilistic Electricity Load<br>Forecasting for Urban Buildings</h1>
+      <div class="author-info">
+        Joonyoung Moon <span>(3035666657)</span> &nbsp;|&nbsp; Supervisor: <span>Prof. Y. Wang</span>
+      </div>
+    </div>
+
+    <div class="content-grid">
+      
+      <!-- LEFT COL -->
+      <div style="display: flex; flex-direction: column; gap: 25mm;">
+        <div class="card">
+          <div class="card-glow"></div>
+          <div class="card-title">1. The Volatility Problem</div>
+          <ul>
+            <li><span class="highlight">Unaggregated Demand:</span> Unlike aggregate municipal grids, individual residential load is dominated by erratic human behavior and sudden HVAC capacity spikes.</li>
+            <li>Predicting these profiles requires transitioning from deterministic points to robust probabilistic bounds.</li>
+          </ul>
+          <img src="file:///C:/Users/mjypa/.gemini/antigravity/brain/959eada5-c285-45ff-92fc-2b589f8f5cae/urban_buildings_1776267962389.png" class="urban-img" alt="Urban Buildings">
+        </div>
+
+        <div class="card">
+          <div class="card-glow"></div>
+          <div class="card-title">2. The Mean-Prediction Trap</div>
+          <p style="margin-bottom: 5mm;">Standard Pinball Loss evaluates probabilistic boundaries using a strict linear multiplier:</p>
+          <div class="concept-box" style="margin: 8mm 0; padding: 10mm; font-size: 16mm; line-height: 1.4; text-align: center;">
+            \[ L_{\tau}(y, \hat{q}_{\tau}) = \max\big(\tau(y - \hat{q}_{\tau}), (\tau - 1)(y - \hat{q}_{\tau})\big) \]
+          </div>
+          <ul>
+            <li><span class="highlight">Linear Dilution:</span> Accute HVAC spike gradients are mathematically overwhelmed by prolonged blocks of low-variance normal usage.</li>
+            <li>The model structurally drifts toward the median baseline, severely breaking its upper-bound projections.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- RIGHT COL -->
+      <div style="display: flex; flex-direction: column; gap: 25mm;">
+        <div class="card orange-theme">
+          <div class="card-glow"></div>
+          <div class="card-title">3. Algorithmic Interventions</div>
+          <p style="margin-bottom: 5mm;">We resolved this by injecting <strong>Asymmetric Spike Quantile Loss</strong> alongside partitioned data mechanics:</p>
+          <div class="concept-box" style="margin: 8mm 0 10mm 0; font-size: 13.5mm; line-height: 1.5; padding: 10mm; text-align: center;">
+            \[ \tilde L_{j,\tau} = \Gamma_{j,\tau} L_{\tau} \quad \Big| \quad \Gamma = \max\Big(1 + C^{\text{peak}} W_p M^{\text{peak}}, \dots\Big) \]
+            \[ L_{\text{asym}} = \frac{1}{|\mathcal N|}\sum_{\mathcal N}\tilde L_N + \frac{1}{|\mathcal E|}\sum_{\mathcal E}\tilde L_E \]
+          </div>
+          <ul>
+            <li><span class="highlight">Compounding Penalty (Γ):</span> Aggressively multiplies gradients strictly when a boundary fails during an extreme event.</li>
+            <li><span class="highlight">Split-Aware Stratified Sampling:</span> Artificially guarantees exposure to extremes during batching to feed the loss.</li>
+          </ul>
+        </div>
+
+        <div class="card orange-theme">
+          <div class="card-glow"></div>
+          <div class="card-title">4. Precision / Coverage Trade-off</div>
+          <div class="stats-container">
+            <div class="stat-row orange">
+              <div class="stat-num orange">58.0%</div>
+              <div class="stat-desc">Peak Event Capture Rate<br><span style="font-size:10mm; color:#aaa; font-weight:400">Achieved a +7.8% absolute gain</span></div>
+            </div>
+            <div class="stat-row">
+              <div class="stat-num">95.8%</div>
+              <div class="stat-desc">Maintained Trough Bound<br><span style="font-size:10mm; color:#aaa; font-weight:400">Secured P10 capacity drop detection</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISUALIZATION SPAN -->
+      <div class="card span-card orange-theme">
+          <div class="card-glow"></div>
+          <div style="flex: 0 0 30%;">
+             <div class="card-title" style="margin-bottom: 10mm; font-size:16mm;">Empirical Visualization</div>
+             <p>By forcing the optimizer to tolerate a minor 5% degradation in deterministic baseline accuracy (wMAPE), we achieved sweeping structural expansions to true extreme-event safety margins.</p>
+             <p>The diagram (right) validates the performance of the generated quantile boundaries (P10, P90) across a high-volatility 4-hour horizon.</p>
+          </div>
+          <img src="training_results/benchmark_tft/forecast_preview.png" class="forecast-img" alt="Forecast Visualization">
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 3. BOTTOM BLEED ZONE -->
+  <div class="bottom-zone">
+    <div class="contact-info">
+      <h3>Read the Full Research</h3>
+      <p>Scan the code to access the complete senior design project report, the TFT architecture codebase, and raw data pipeline via GitHub.</p>
+      <p style="color: var(--neon-blue); font-size: 14mm; font-weight: 800;">Contact: jmoon@example.edu</p>
+    </div>
+    <div class="qr-placeholder">QR Code</div>
+    <div class="bleed-warning">Non-Visible Roller Cavity</div>
+  </div>
+
+</div>
+</body>
+</html>

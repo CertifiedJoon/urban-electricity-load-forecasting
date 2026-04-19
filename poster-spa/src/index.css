@@ -110,3 +110,65 @@ body.exporting-pdf .title-gradient {
   color: var(--neon-blue) !important;
   text-shadow: none !important;
 }
+
+/* 
+ * DYNAMIC POSTER WRAPPER
+ * Hides the ugly 500px void for web visitors, but instantly inflates
+ * to exactly 2090px when Python/React triggers the 'exporting-pdf' flag!
+ */
+.poster-wrapper {
+  height: auto;
+}
+
+body.exporting-pdf .poster-wrapper {
+  height: 2090px !important;
+  background: #000 !important;
+}
+
+/* 
+ * MOBILE RESPONSIVE OVERRIDES
+ * Because Playwright renders EXACTLY at 800px width, these mobile
+ * rules (< 800px) will NEVER bleed into the PDF hardware generations!
+ */
+@media (max-width: 799px) {
+  .poster-wrapper {
+    width: 100% !important;
+    padding: 10px !important;
+  }
+  .app-container {
+    width: 100% !important;
+    height: auto !important;
+    padding: 0 16px 24px 16px !important;
+  }
+  .full-bleed-header {
+    width: auto !important;
+    margin: 0 -16px 16px -16px !important;
+  }
+  .mobile-collapse {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .mobile-stack {
+    grid-template-columns: 1fr !important;
+  }
+  .export-buttons {
+    display: none !important;
+  }
+  .math-block {
+    overflow-x: auto;
+    font-size: 8px !important;
+  }
+  .title-gradient {
+    font-size: 1.6rem !important;
+  }
+  .metrics-container {
+    flex-direction: column !important;
+    gap: 24px !important;
+    padding: 24px !important;
+  }
+  .metrics-divider {
+    width: 60% !important;
+    height: 1px !important;
+    margin: 8px 0 !important;
+  }
+}

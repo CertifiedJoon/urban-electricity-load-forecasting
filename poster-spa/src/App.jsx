@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, ShieldAlert, Cpu, Zap, TrendingUp, Key, Download, Image as ImageIcon } from 'lucide-react';
+import { Activity, ShieldAlert, Cpu, Zap, TrendingUp, Key, Download, Image as ImageIcon, BookOpen, Microscope, CheckCircle } from 'lucide-react';
 import 'katex/dist/katex.min.css';
 import { BlockMath } from 'react-katex';
 import { usePDF } from 'react-to-pdf';
 import html2canvas from 'html2canvas';
 import headerImage from './assets/Poster Header.jpg';
+import tftImage from './assets/TFT.png';
 
 const FadeIn = ({ children, delay = 0, className = '', style = {} }) => (
   <motion.div
@@ -53,9 +54,9 @@ function App() {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', background: '#000', minHeight: '100vh', padding: '40px 0' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#000', minHeight: '100vh', padding: '40px 0' }}>
 
-      <div style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 9999, display: 'flex', gap: '16px' }}>
+      <div className="export-buttons" style={{ position: 'fixed', bottom: '40px', right: '40px', zIndex: 9999, display: 'flex', gap: '16px' }}>
         <button
           onClick={handleExportPNG}
           style={{
@@ -86,10 +87,9 @@ function App() {
       {/* 800x2090 PULL-UP BANNER WRAPPER WITH BLEED PADDING */}
       <div
         ref={targetRef}
+        className="poster-wrapper"
         style={{
           width: '800px',
-          height: '2090px',
-          background: '#000',
           padding: '20px 10px',
           boxSizing: 'border-box',
           display: 'flex',
@@ -97,12 +97,12 @@ function App() {
           alignItems: 'center'
         }}
       >
-        {/* STRICT 780x1470 INNER DESIGN BOX */}
+        {/* STRICT 780x1570 INNER DESIGN BOX */}
         <div
           className="app-container"
           style={{
             width: '780px',
-            height: '1470px',
+            height: '1570px',
             background: 'radial-gradient(circle at 40% 30%, #171d2b 0%, #050608 100%)',
             color: 'var(--text-main)',
             position: 'relative',
@@ -117,12 +117,12 @@ function App() {
           }}
         >
           {/* FULL BLEED HEADER IMAGE (780x150) */}
-          <div style={{ margin: '0 -32px 16px -32px', width: '780px', height: '150px', background: '#e53935' }}>
+          <div className="full-bleed-header" style={{ margin: '0 -32px 16px -32px', width: '780px', height: '150px', background: '#e53935' }}>
             <img src={headerImage} alt="HKU Header" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
 
           {/* HERO SECTION */}
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '16px' }}>
+          <header className="mobile-collapse hero-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '16px' }}>
             <div style={{ flex: 1 }}>
               <h1 className="title-gradient" style={{ fontSize: '2.1rem', fontWeight: 900, lineHeight: 1.1, margin: 0 }}>
                 Probabilistic Electricity Load Forecasting<br />for Urban Buildings
@@ -148,13 +148,13 @@ function App() {
               <h2 style={{ fontSize: '1.4rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShieldAlert color="var(--neon-blue)" size={20} /> The Problem Statement
               </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 <FadeIn delay={0.1}>
                   <div className="glass-card" style={{ padding: '16px', height: '100%' }}>
                     <h3 style={{ fontSize: '1.1rem', color: 'var(--neon-blue)', marginBottom: '8px' }}>1. The Volatility Problem</h3>
                     <div style={{ lineHeight: 1.5, color: 'var(--text-muted)' }}>
                       <p style={{ marginBottom: '8px' }}>Forecasting at the <strong>individual household level</strong> is severely hindered by highly stochastic occupant behavior and sudden HVAC activity.</p>
-                      <p>Systematic underestimation of these localized peaks accelerates thermal transformer degradation. We must definitively shift from deterministic point-estimates toward rigorous probabilistic bounding.</p>
+                      <p>Systematic underestimation of these localized peaks poses significant challenges to grid management. We must shift from deterministic point-estimates toward rigorous probabilistic bounding.</p>
                     </div>
                   </div>
                 </FadeIn>
@@ -163,8 +163,10 @@ function App() {
                   <div className="glass-card" style={{ padding: '16px', height: '100%' }}>
                     <h3 style={{ fontSize: '1.1rem', color: 'var(--neon-blue)', marginBottom: '8px' }}>2. Inadequacy of Pinball Loss</h3>
                     <div style={{ lineHeight: 1.5, color: 'var(--text-muted)' }}>
-                      <p style={{ marginBottom: '8px' }}>Interval forecasting natively relies on Quantile (Pinball) Loss to bound uncertainty. However, its standard linear penalty mechanism is structurally inadequate for high-volatility urban loads.</p>
-                      <p>Across prolonged multi-step horizons, massive volumes of baseline usage cause <em>temporal dilution</em>. The optimizer is forced into a <strong>"mean-prediction trap,"</strong> systematically averaging out the critical gradients required to anticipate severe capacity spikes.</p>
+                      <p style={{ marginBottom: '8px' }}>Probabilistic forecasting relies on variations of Pinball Loss to bound uncertainty. However, across prolonged multi-step horizons, massive volumes of baseline usage cause <em>temporal dilution</em>: penalty applied to spikes are dilluted by compratively large horizon of baseline.</p>
+                      <div className="math-block" style={{ background: 'rgba(0,0,0,0.5)', padding: '6px', borderRadius: '8px', margin: '8px 0', border: '1px solid rgba(0, 229, 255, 0.2)' }}>
+                        <BlockMath math={"\\operatorname{L}_{\\mathcal{sequence}}=\\frac{1}{T}\\sum_{t=1}^{T}{L_q\\left(y_t,\\widehat{y_t^{\\left(q\\right)}},q\\right)}"} />
+                      </div>
                     </div>
                   </div>
                 </FadeIn>
@@ -174,15 +176,15 @@ function App() {
             {/* SEC 2: SOLUTION */}
             <section>
               <h2 style={{ fontSize: '1.4rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--neon-orange)' }}>
-                <Cpu color="var(--neon-orange)" size={20} /> The Proposed Solution
+                <Cpu color="var(--neon-orange)" size={20} /> Solution: Split-mean Spike-aware Quantile Loss
               </h2>
               <FadeIn delay={0.3}>
                 <div className="glass-card orange" bordercolor="var(--neon-orange)" style={{ padding: '16px' }}>
                   <p style={{ fontSize: '12px', lineHeight: 1.5, marginBottom: '12px', color: 'var(--text-muted)' }}>
-                    To computationally prioritize event-capture without destroying high-frequency features via smoothing (MVMD), we engineered an algorithm-centric intervention natively integrated with the Temporal Fusion Transformer (TFT).
+                    Algorithm-centric intervention natively integrated with the Temporal Fusion Transformer (TFT). This loss function applies asymmetric penalty to trough/peak and structurally isolatie critical gradients to prevent temporal dilution.
                   </p>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '16px', alignItems: 'center' }}>
+                  <div className="mobile-stack" style={{ display: 'grid', gridTemplateColumns: '1fr 3fr', gap: '16px', alignItems: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <div>
                         <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--neon-orange)' }}><Zap size={14} /> Penalty (Γ)</h4>
@@ -217,13 +219,13 @@ function App() {
                 <div className="glass-card" style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
                   {/* Visual Metrics Replacement */}
-                  <div style={{ display: 'flex', justifyContent: 'space-evenly', alignItems: 'center', background: 'rgba(0,0,0,0.4)', padding: '10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div className="metrics-container" style={{ display: 'flex', justifyContent: 'space-evenly', alignItems: 'center', background: 'rgba(0,0,0,0.4)', padding: '10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '2.5rem', fontWeight: 900, color: 'var(--neon-orange)', textShadow: '0 0 20px rgba(249, 115, 22, 0.4)', lineHeight: 1 }}>+7.8%</div>
                       <div style={{ fontSize: '12px', color: '#fff', fontWeight: 600, marginTop: '4px' }}>Total Capture: 51.4%</div>
                       <div style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginTop: '2px' }}>P90 Peak Coverage</div>
                     </div>
-                    <div style={{ width: '1px', height: '50px', background: 'rgba(255,255,255,0.2)' }}></div>
+                    <div className="metrics-divider" style={{ width: '1px', height: '50px', background: 'rgba(255,255,255,0.2)' }}></div>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '2.5rem', fontWeight: 900, color: 'var(--neon-blue)', textShadow: '0 0 20px rgba(0, 229, 255, 0.4)', lineHeight: 1 }}>98.8%</div>
                       <div style={{ fontSize: '12px', color: '#fff', fontWeight: 600, marginTop: '4px' }}>Maintained Strict Compliance</div>
@@ -240,6 +242,74 @@ function App() {
 
           </div>
         </div>
+      </div>
+
+      {/* EXTENDED WEBSITE CONTENT */}
+      <div className="extended-web-content" style={{ maxWidth: '800px', width: '100%', marginTop: '40px', display: 'flex', flexDirection: 'column', gap: '32px', color: 'var(--text-main)', padding: '0 20px' }}>
+
+        {/* LITERATURE REVIEW */}
+        <section>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+            <BookOpen color="var(--neon-blue)" size={24} /> Literature Review & Context
+          </h2>
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
+            <div>
+              <h3 style={{ color: 'var(--neon-blue)', marginBottom: '4px', fontSize: '1.1rem' }}>The Failure of Determinism & Aggregation</h3>
+              <p>Historically, sequence models like LSTMs have thrived on highly aggregated, smooth municipal substation data. However, unaggregated individual residential smart meter data is characterized by extreme, high-frequency volatility driven by unpredictable human behavior. Traditional point-forecasting mathematically defaults to the median to minimize symmetric loss across baseline periods, trapping the model in a "mean-prediction trap" and rendering it blind to dangerous HVAC spikes.</p>
+            </div>
+            <div>
+              <h3 style={{ color: 'var(--neon-blue)', marginBottom: '4px', fontSize: '1.1rem' }}>Transition to Probabilistic Interval Forecasting</h3>
+              <p>Modern grid analytics requires actionable safety margins. This paradigm shift demands multi-quantile bounding (e.g., constructing P10 to P90 intervals). However, standard Pinball Loss relies on horizontal, linear penalties which are highly susceptible to temporal dilution across multi-hour prediction windows. Our research resolves this by introducing dynamic asymmetric optimization to rigorously secure boundary extremes.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* METHODOLOGY EXTENSION */}
+        <section>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+            <Microscope color="var(--neon-orange)" size={24} /> Methodology Deep-Dive
+          </h2>
+          <div className="glass-card orange" style={{ display: 'flex', flexDirection: 'column', gap: '16px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
+            {/* TFT IMAGE EMBED */}
+            <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: '12px', padding: '16px', display: 'flex', justifyContent: 'center', border: '1px solid rgba(249, 115, 22, 0.2)' }}>
+              <img src={tftImage} alt="TFT Architecture Diagram" style={{ maxWidth: '100%', height: 'auto', borderRadius: '8px', objectFit: 'contain', maxHeight: '400px' }} />
+            </div>
+
+            <div>
+              <h3 style={{ color: 'var(--neon-orange)', marginBottom: '4px', fontSize: '1.1rem' }}>The Temporal Fusion Transformer (TFT)</h3>
+              <p>The TFT serves as the core foundational sequence architecture. It is explicitly engineered to process heterogeneous inputs via specialized Variable Selection Networks (VSNs). By routing features through Gated Residual Networks (GRNs), the network utilizes static household demographics as conditioning vectors to initialize its sequential layers. This forces its multi-head attention mechanisms to mathematically contextualize generic temporal cycles against the invariant baseline of each specific unseen residential household before projecting its final multi-quantile boundary boundaries.</p>
+            </div>
+
+            <div>
+              <h3 style={{ color: 'var(--neon-orange)', marginBottom: '4px', fontSize: '1.1rem' }}>Spatial Splitting & Data Orchestration</h3>
+              <p>We utilized the IDEAL dataset (255 UK homes) ensuring chronologically sound rolling temporal cutoffs. Crucially, we enforced a strict <em>spatial split</em>—training, validation, and testing logic were divided by unique households to guarantee the Temporal Fusion Transformer generalized to unseen behavioral profiles rather than simply memorizing seasonal trends.</p>
+            </div>
+            <div>
+              <h3 style={{ color: 'var(--neon-orange)', marginBottom: '4px', fontSize: '1.1rem' }}>Bi-Directional Asymmetric Penalization</h3>
+              <p>To break the mean-prediction trap, our custom <strong>Asymmetric Spike Quantile Loss</strong> actively overrides the standard scalar penalty. By applying a heavy compounding weight strictly to outlier peaks and troughs, the loss gradient physically forces the attention mechanisms to prioritize boundary expansion over median comfort.</p>
+            </div>
+            <div>
+              <h3 style={{ color: 'var(--neon-orange)', marginBottom: '4px', fontSize: '1.1rem' }}>Split-Aware Stratified Sampling</h3>
+              <p>Because severe load spikes represent the extreme tail of the distribution, standard random sampling starves the model of out-of-distribution gradient density. Our Stratified Sampler intercepts sequence formulation, artificially over-sampling minority volatility patches to guarantee the architecture maps the structural precursors to impending spikes.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* CONCLUSION */}
+        <section style={{ marginBottom: '80px' }}>
+          <h2 style={{ fontSize: '1.6rem', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
+            <CheckCircle color="var(--neon-blue)" size={24} /> Conclusion
+          </h2>
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '16px', lineHeight: 1.6, color: 'var(--text-muted)' }}>
+            <p>
+              This study systematically establishes the necessity of a deterministic-probabilistic trade-off for handling residential non-stationarity. We empirically validate that executing our Bi-directional Asymmetric Loss coupled with Stratified Sampling successfully rescues sequence tracking from systematic peak underestimation.
+            </p>
+            <p>
+              By intentionally degrading global weighted Mean Absolute Percentage Error (wMAPE) by approximately 8.5%, the proposed synergistic architecture aggressively expanded actionable <strong>P90 Peak Capture by +7.8%</strong> without sacrificing robust P10 trough foundations. Ultimately, transitioning from passive baseline averaging to active extreme-event detection actively secures modern grids against local thermal degradation and load failures.
+            </p>
+          </div>
+        </section>
+
       </div>
     </div>
   );

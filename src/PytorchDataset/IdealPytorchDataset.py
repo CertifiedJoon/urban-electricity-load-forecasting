@@ -30,7 +30,6 @@ class IdealPytorchDataset(Dataset):
         for h_id in home_ids:
             static, dynamic = orchestrator.get_home_data(h_id)
 
-            # Debugging: Show why a home might be skipped
             if dynamic is None:
                 print(f"Home {h_id}: Skipped (No Data Found)")  # Uncomment if too noisy
                 continue
@@ -39,7 +38,6 @@ class IdealPytorchDataset(Dataset):
                     f"Home {h_id}: Skipped (Data too short: {len(dynamic)} vs {self.window_size + self.prediction_shift})"
                 )
                 continue
-            # Ensure we have enough data for Input + 1 Target
             if dynamic is not None and len(dynamic) > (
                 self.window_size + self.prediction_shift
             ):
@@ -49,9 +47,7 @@ class IdealPytorchDataset(Dataset):
 
         print(f"Loaded {len(self.samples)} valid homes.")
 
-        # --- 3. ISOLATE STATS TO PREVENT LEAKAGE ---
         if split == "train":
-            # Calculate global mean/std ONLY on the training distribution
             all_power = pd.concat([s["dynamic"]["value"] for s in self.samples])
             all_temps = pd.concat([s["dynamic"]["temperature"] for s in self.samples])
 
@@ -68,7 +64,9 @@ class IdealPytorchDataset(Dataset):
 
         if self.split != "train":
             for sample_idx, sample in enumerate(self.samples):
-                max_start = len(sample["dynamic"]) - self.window_size - self.prediction_shift
+                max_start = (
+                    len(sample["dynamic"]) - self.window_size - self.prediction_shift
+                )
                 for start_idx in self._build_eval_start_indices(max_start):
                     self.eval_index.append((sample_idx, start_idx))
 
@@ -99,11 +97,13 @@ class IdealPytorchDataset(Dataset):
         if start_idx is None and max_start <= 0:
             start_idx = 0
         elif start_idx is None:
-            # --- 4. SPLIT-AWARE SAMPLING LOGIC ---
             if self.split == "train":
                 spike_threshold = full_dyn["value"].quantile(0.85)
                 fall_threshold = full_dyn["value"].quantile(0.15)
-                high_power_idx = np.where((full_dyn["value"].values < fall_threshold) | (full_dyn["value"].values > spike_threshold))[0]
+                high_power_idx = np.where(
+                    (full_dyn["value"].values < fall_threshold)
+                    | (full_dyn["value"].values > spike_threshold)
+                )[0]
 
                 valid_spike_starts = (
                     high_power_idx
@@ -115,16 +115,11 @@ class IdealPytorchDataset(Dataset):
                     (valid_spike_starts >= 0) & (valid_spike_starts <= max_start)
                 ]
 
-                # loss trend based sampling
-                if (
-                    np.random.rand() < self.sampling_rate
-                    and len(spike_start_pool) > 0
-                ):
+                if np.random.rand() < self.sampling_rate and len(spike_start_pool) > 0:
                     start_idx = np.random.choice(spike_start_pool)
                 else:
                     start_idx = np.random.randint(0, max_start + 1)
 
-        # --- 5. EXTRACT & STANDARDIZE SEQUENCES ---
         input_seq = full_dyn.iloc[start_idx : start_idx + self.window_size].copy()
 
         input_seq.loc[:, "value"] = (
@@ -203,10 +198,8 @@ class IdealPytorchDataset(Dataset):
 
     def get_full_home_stream(self, home_id):
         """
-        RELEVANT FOR VISUALIZATION:
         Finds a specific home by its ID and returns the raw continuous data.
         """
-        # Find the specific home in our sample list
         target_sample = None
         for s in self.samples:
             if str(s["homeid"]) == str(home_id):
@@ -224,7 +217,6 @@ class IdealPytorchDataset(Dataset):
             power["temperature"] - self.weather_stats["mean"]
         ) / self.weather_stats["std"]
 
-        # Convert the full numpy array to a tensor of shape [Total_Mins, 1]
         full_power_tensor = torch.tensor(power["value"].values).float().unsqueeze(-1)
         full_time_tensor = torch.tensor(
             power[["hour", "dayofweek", "month"]].values
@@ -235,7 +227,6 @@ class IdealPytorchDataset(Dataset):
         full_weather_condition_tensor = torch.tensor(power["conditions"].values).long()
 
         static_data = target_sample["static"]
-        # Get the static socio-economic features
         static_features = torch.tensor(
             [
                 static_data["homeid"],

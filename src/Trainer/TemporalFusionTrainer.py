@@ -22,7 +22,6 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         super().__init__()
         self.baseline = baseline
         self.quantiles = quantiles
-        # z_threshold is in standard deviations (e.g., 1.5 = top ~7% of data)
         self.z_threshold = z_threshold
         if brave_multiplier is not None:
             w_peak = brave_multiplier
@@ -35,75 +34,48 @@ class AsymmetricSpikeQuantileLoss(nn.Module):
         device = preds.device
         B, _ = target.shape
 
-        # Patching the targets to match the sequence length of preds
         targets_patched = target.view(B, -1, self.patch_size).mean(dim=-1)
-
-        # 1. Expand dimensions for broadcasting
         q_tensor = torch.tensor(self.quantiles, device=device).view(1, 1, -1)
         target_expanded = targets_patched.unsqueeze(-1)
-
-        # 2. Calculate raw errors
         errors = target_expanded - preds
 
-        # 3. Standard Pinball Loss
         standard_loss = torch.max(q_tensor * errors, (q_tensor - 1) * errors)
         if self.baseline:
             return torch.mean(standard_loss.view(-1))
 
-        # --- THE FIX: BI-DIRECTIONAL ASYMMETRIC WEIGHTING ---
-
-        # Condition A: Is this an extreme event? (Operating in Z-score space)
         is_peak = (target_expanded > self.z_threshold).float()
         is_drop = (target_expanded < -self.z_threshold).float()
         is_extreme = is_peak + is_drop  # Will be 1.0 if either is true
 
-        # Condition B: Was the model cowardly?
-        # For peaks, cowardly means under-predicting (Target > Pred -> Error > 0)
         cowardly_peak = is_peak * (errors > 0).float()
-
-        # For drops, cowardly means over-predicting (Target < Pred -> Error < 0)
         cowardly_drop = is_drop * (errors < 0).float()
 
-        # Condition C: What is the magnitude of the extreme event?
-        # How far past the threshold did it actually go?
         peak_magnitude = F.relu(target_expanded - self.z_threshold)
         drop_magnitude = F.relu(-self.z_threshold - target_expanded)
-        extreme_magnitude = peak_magnitude + drop_magnitude
 
-        # Build the Multiplier
-        # If the model was cowardly during an extreme event, punish it heavily.
-        # If the model was brave (overshot a peak or undershot a drop), multiplier remains a safe 1.0.
         peak_multiplier = 1.0 + (cowardly_peak * self.w_peak * peak_magnitude)
         trough_multiplier = 1.0 + (cowardly_drop * self.w_trough * drop_magnitude)
         multiplier = torch.maximum(peak_multiplier, trough_multiplier)
 
-        # 4. Apply weights and average across the 3 quantiles -> Shape: [B, seq_len]
         weighted_loss = standard_loss * multiplier
         weighted_loss = torch.mean(weighted_loss, dim=2)
 
-        # --- THE TEMPORAL DILUTION FIX (SPLIT-MEAN) ---
-
-        # Squeeze the trailing dimension off our extreme mask so it matches weighted_loss
         is_extreme_2d = is_extreme.squeeze(-1)
 
-        # Flatten the tensors to separate the timesteps cleanly
         flat_loss = weighted_loss.view(-1)
         flat_is_extreme = is_extreme_2d.view(-1)
 
-        # 1. Calculate the mean of ONLY the normal, boring timesteps
         normal_timesteps_loss = flat_loss[flat_is_extreme == 0.0]
         mean_normal_loss = (
             torch.mean(normal_timesteps_loss) if len(normal_timesteps_loss) > 0 else 0.0
         )
 
-        # 2. Calculate the mean of ONLY the extreme timesteps (both peaks and drops)
         extreme_timesteps_loss = flat_loss[flat_is_extreme == 1.0]
         if len(extreme_timesteps_loss) > 0:
             mean_extreme_loss = torch.mean(extreme_timesteps_loss)
         else:
             mean_extreme_loss = 0.0
 
-        # 3. Combine them. Extreme volatility now has equal voting power to the baseline!
         final_loss = mean_normal_loss + mean_extreme_loss
 
         return final_loss
