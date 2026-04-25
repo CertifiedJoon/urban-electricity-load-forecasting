@@ -34,30 +34,33 @@ def get_attention_hook(model_name):
 # ==========================================
 # 2. INFERENCE & EXTRACTION
 # ==========================================
-def extract_attention_for_event(models_dict, test_loader, device, q90_threshold, cardinalities):
+def extract_attention_for_event(models_dict, test_loader, device, cardinalities):
     """
-    Finds a severe peak event, runs it through all models, and extracts attention.
+    Finds the most severe peak event in the test set, runs it through all models, and extracts attention.
     """
-    # 1. Scan dataloader for a specific severe peak event
+    # 1. Scan dataloader for the most extreme peak event
     peak_batch = None
     peak_index = None
+    global_max = -float('inf')
     
-    print(f"Scanning test set for a severe out-of-distribution peak (threshold: {q90_threshold:.2f})...")
+    print("Scanning test set for the most severe peak event...")
     for batch in test_loader:
         targets = batch["y"].to(device)
         
-        # Check if any target in this batch exceeds our P90 threshold
-        max_targets = targets.max(dim=1).values
-        if (max_targets > q90_threshold).any():
-            peak_index = torch.argmax(max_targets).item()
+        # Find the max target in this batch
+        max_vals = targets.max(dim=1).values
+        batch_max = max_vals.max().item()
+        
+        if batch_max > global_max:
+            global_max = batch_max
+            peak_index = torch.argmax(max_vals).item()
             # Isolate this specific sequence (batch size = 1)
             peak_batch = {k: v[peak_index:peak_index+1].to(device) for k, v in batch.items()}
-            break
 
     if peak_batch is None:
-        raise ValueError("No peak event found exceeding the threshold in the dataloader subset.")
+        raise ValueError("No peak event found in the dataloader subset.")
 
-    print("Peak event isolated. Extracting internal attention matrices...")
+    print(f"Peak event isolated with normalized value: {global_max:.2f}. Extracting internal attention matrices...")
     
     extracted_attentions = {}
     
@@ -208,15 +211,11 @@ if __name__ == "__main__":
             eval_samples_per_home=8,
         )
         
-        # Find a severe peak. We use 4.0 standard deviations as the threshold
-        q90_threshold = 4.0 
-        
         try:
             extracted_attentions, peak_batch = extract_attention_for_event(
                 {k: v for k, v in models_to_test.items() if os.path.exists(v["path"])}, 
                 test_loader, 
                 device, 
-                q90_threshold,
                 orchestrator.cardinalities
             )
             
