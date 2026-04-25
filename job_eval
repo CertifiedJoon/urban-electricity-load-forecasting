@@ -11,4 +11,4 @@ conda activate myenv
 
 # cd your your desired directory and execute your program, e.g.
 cd urban-electricity-load-forecasting
-python python benchmark_asymmetric_weights_eval_only.py --benchmark-root training_results/benchmark_tft > output.log 2>&1
+python benchmark_asymmetric_weights_eval_only.py > output.log 2>&1

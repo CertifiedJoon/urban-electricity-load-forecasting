@@ -14,16 +14,16 @@ from train_temporal_fusion import create_data_loaders, run_training_experiment
 
 
 VARIANTS = [
-    # {
-    #     "name": "base_pinball_sr0.0",
-    #     "sampling_rate": 0.0,
-    #     "loss_name": "pinball",
-    # },
-    # {
-    #     "name": "oracle_pinball_sr0.5",
-    #     "sampling_rate": 0.5,
-    #     "loss_name": "pinball",
-    # },
+    {
+        "name": "base_pinball_sr0.0",
+        "sampling_rate": 0.0,
+        "loss_name": "pinball",
+    },
+    {
+        "name": "oracle_pinball_sr0.5",
+        "sampling_rate": 0.5,
+        "loss_name": "pinball",
+    },
     {
         "name": "oracle_asymmetric_sr0.0",
         "sampling_rate": 0.0,
@@ -101,7 +101,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--warmup-epochs", type=int, default=10)
-    parser.add_argument("--patience", type=int, default=100)
+    parser.add_argument("--patience", type=int, default=290)
     parser.add_argument("--accumulation-step", type=int, default=16)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
